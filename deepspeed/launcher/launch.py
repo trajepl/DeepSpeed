@@ -21,8 +21,6 @@ from argparse import ArgumentParser, REMAINDER
 from ..constants import TORCH_DISTRIBUTED_DEFAULT_PORT, DLTS_POD_ENV_PATH
 from ..utils import logger
 
-PID_FILE_BASEPATH = "/tmp"
-
 
 def parse_args():
     parser = ArgumentParser(description="DeepSpeed distributed training launch"
@@ -52,27 +50,6 @@ def parse_args():
                         default="None",
                         type=str,
                         help="world info base64 encoded dictionary")
-
-    parser.add_argument("--module",
-                        action="store_true",
-                        help="Change each process to interpret the launch "
-                        "script as a Python module, executing with the same "
-                        "behavior as 'python -m'.")
-
-    parser.add_argument("--no_python",
-                        action="store_true",
-                        help="Skip prepending the training script with "
-                        "'python' - just execute it directly.")
-
-    parser.add_argument("--no_local_rank",
-                        action="store_true",
-                        help="Do not pass local_rank as an argument when calling "
-                        "the user's training script.")
-
-    parser.add_argument("--save_pid",
-                        type=int,
-                        default=0,
-                        help="main launching process pid, for internal pid tracking")
 
     # positional
     parser.add_argument("training_script",
@@ -128,28 +105,13 @@ def main():
     current_env["MASTER_ADDR"] = args.master_addr
     current_env["MASTER_PORT"] = str(args.master_port)
     current_env["WORLD_SIZE"] = str(dist_world_size)
-    current_env["CROSS_RANK"] = str(args.node_rank)
-    current_env["CROSS_SIZE"] = str(args.nnodes)
-    current_env["LOCAL_SIZE"] = str(num_local_procs)
-
-    if args.save_pid:
-        print(f"launcher pid: {os.getpid()}")
-
-    pid_file = None
-    if args.save_pid:
-        launcher_pid = os.getpid()
-        pid_file = os.path.join(PID_FILE_BASEPATH, f"{args.save_pid}.deepspeed")
-        assert not os.path.isfile(pid_file), "pid file exists but shouldn't"
-        with open(pid_file, 'w') as fd:
-            fd.write(f"{launcher_pid}")
 
     if os.path.exists(DLTS_POD_ENV_PATH):
         with open(DLTS_POD_ENV_PATH) as file:
             lines = file.readlines()
             lines = [line.rstrip() for line in lines]
             for line in lines:
-                if line.startswith('export FC_TASKROLE_NAME') or line.startswith(
-                        'export FC_TASK_INDEX'):
+                if line.startswith('export FC_TASKROLE_NAME') or line.startswith('export FC_TASK_INDEX'):
                     key_val = line.split()[1]
                     key, val = key_val.split('=')
                     current_env[key] = val
@@ -163,20 +125,10 @@ def main():
         current_env["LOCAL_RANK"] = str(local_rank)
 
         # spawn the processes
-        cmd = []
-        if not args.no_python:
-            cmd = [sys.executable, "-u"]
-            if args.module:
-                cmd.append("-m")
-        else:
-            if args.module:
-                raise ValueError("Don't use both the '--no_python' flag"
-                                 " and the '--module' flag at the same time.")
-        cmd.append(args.training_script)
-        # A user may not want to pass local_rank as a keyword arg so we make this optional.
-        if not args.no_local_rank:
-            cmd.append(f"--local_rank={local_rank}")
-        cmd += args.training_script_args
+        cmd = [sys.executable,
+               "-u",
+               args.training_script,
+               f"--local_rank={local_rank}"] + args.training_script_args
 
         process = subprocess.Popen(cmd, env=current_env)
         processes.append(process)
@@ -192,13 +144,9 @@ def main():
             except Exception:
                 pass
         if last_return_code is not None:
-            logger.error(f"{cmd} exits with return code = {last_return_code}")
-            sys.exit(last_return_code)
+            raise subprocess.CalledProcessError(returncode=last_return_code, cmd=cmd)
         if signum in sig_names:
             logger.info(f"Main process received {sig_names[signum]}, exiting")
-        if args.save_pid:
-            if os.path.isfile(pid_file):
-                os.remove(pid_file)
         sys.exit(1)
 
     # pass SIGINT/SIGTERM to children if the parent is being terminated

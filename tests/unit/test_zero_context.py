@@ -1,4 +1,5 @@
 import os
+import sys
 from types import SimpleNamespace
 
 import torch
@@ -7,13 +8,13 @@ import pytest
 import deepspeed
 from deepspeed.runtime.zero.partition_parameters import ZeroParamStatus, partitioned_param_data_shape
 
-from .common import distributed_test, get_master_port
+from common import distributed_test
 
 
 def setup_serial_env():
     # Setup for a serial run
     os.environ['MASTER_ADDR'] = '127.0.0.1'
-    os.environ['MASTER_PORT'] = get_master_port()
+    os.environ['MASTER_PORT'] = '29503'
     os.environ['LOCAL_RANK'] = '0'
     os.environ['RANK'] = '0'
     os.environ['WORLD_SIZE'] = '1'

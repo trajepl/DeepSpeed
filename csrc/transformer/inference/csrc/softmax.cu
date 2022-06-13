@@ -1,9 +1,7 @@
 #include <limits>
 #include "custom_cuda_layers.h"
 
-#ifndef __HIP_PLATFORM_HCC__
 #include <cuda_profiler_api.h>
-#endif
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
@@ -40,7 +38,7 @@ __global__ void attn_softmax_v2(__half* vals,
                                 int iterations,
                                 int reduceWidth)
 {
-#ifdef HALF_PRECISION_AVAILABLE
+#if __CUDA_ARCH__ >= 700
 
     cg::thread_block b = cg::this_thread_block();
     cg::thread_block_tile<WARP_SIZE> g = cg::tiled_partition<WARP_SIZE>(b);

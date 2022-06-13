@@ -74,8 +74,6 @@ class PipelineEngine(DeepSpeedEngine):
         # We schedule the all-reduces, so disable it in super().backward()
         self.enable_backward_allreduce = False
         self.has_bool_tensors = has_bool_tensors
-        self.eval_return_logits = False
-        self.outputs = None
 
         # used to disable the pipeline all-reduce when used with 1-bit Adam/1-bit LAMB
         self.pipeline_enable_backward_allreduce = True
@@ -158,7 +156,7 @@ class PipelineEngine(DeepSpeedEngine):
                         f'TOTAL_PARAMS={total_params} ({total_params/1e6:0.3f}M) '
                         f'UNIQUE_PARAMS={unique_params} ({unique_params/1e6:0.3f}M)')
 
-        #initialize peer-2-peer communication and allreduce groups
+        #intialize peer-2-peer communication and allreduce groups
         if self.is_pipe_parallel:
             p2p.init_process_groups(self.grid)
 
@@ -193,7 +191,6 @@ class PipelineEngine(DeepSpeedEngine):
         if self.is_last_stage():
             self.loss_model = self.module.loss_fn
 
-        self.has_attention_mask = self.module.__class__.__name__ == 'GPT2ModelPipe'
         # Initialize pipeline communicators. Just send a 0.
         if is_even(self.stage_id):
             if not self.is_last_stage():
@@ -222,10 +219,6 @@ class PipelineEngine(DeepSpeedEngine):
             self.timers('step_microstep').start()
             self.timers('step_microstep').stop()
 
-    def set_has_attention_mask(self, value):
-        assert isinstance(value, bool)
-        self.has_attention_mask = value
-
     def _build_data_iter(self, dataset):
         sampler = torch.utils.data.distributed.DistributedSampler(
             dataset,
@@ -248,30 +241,13 @@ class PipelineEngine(DeepSpeedEngine):
         # (see https://github.com/EleutherAI/gpt-neox/issues/62#issuecomment-761471944)
         if self.zero_optimization_partition_gradients():
             self.optimizer.overlapping_partition_gradients_reduce_epilogue()
-
-        weight_group_list = self.module.get_tied_weights_and_groups()
-        for weight, group in weight_group_list:
-            grad = weight._hp_grad if self.bfloat16_enabled() else weight.grad
-            dist.all_reduce(grad, group=group)
+        self.module.allreduce_tied_weight_gradients()
 
     def _exec_reduce_grads(self):
         self._force_grad_boundary = True
         if self.pipeline_enable_backward_allreduce:
-            if self.bfloat16_enabled():
-                if self.zero_optimization_stage() == 0:
-                    self._bf16_reduce_grads()
-                else:
-                    assert self.zero_optimization_stage() == 1, "only bf16 + z1 are supported"
-                    raise NotImplementedError()
-            else:
-                self.allreduce_gradients(bucket_size=MEMORY_OPT_ALLREDUCE_SIZE)
+            self.allreduce_gradients(bucket_size=MEMORY_OPT_ALLREDUCE_SIZE)
         self._force_grad_boundary = False
-
-    def _bf16_reduce_grads(self):
-        # Make our own list of gradients from the optimizer's FP32 grads
-        grads = []
-        self.buffered_allreduce_fallback(grads=self.optimizer.get_grads_for_reduction(),
-                                         elements_per_buffer=MEMORY_OPT_ALLREDUCE_SIZE)
 
     def _reserve_pipe_buffers(self, num_buffers):
         """Ensure that each pipeline buffer has at least ``num_buffers`` slots.
@@ -357,7 +333,7 @@ class PipelineEngine(DeepSpeedEngine):
 
         if self.global_steps % self.steps_per_print() == 0:
             if self.global_rank == 0:
-                elapsed = self.timers('train_batch').elapsed(reset=True) / 1000.0
+                elapsed = self.timers('train_batch').elapsed(reset=True)
                 iter_time = elapsed / self.steps_per_print()
                 tput = self.train_batch_size() / iter_time
                 print(f'steps: {self.global_steps} '
@@ -388,11 +364,7 @@ class PipelineEngine(DeepSpeedEngine):
         # TODO: should return precisely what loss returned and allow others to be queried?
         return self.agg_train_loss
 
-    def eval_batch(self,
-                   data_iter,
-                   return_logits=False,
-                   compute_loss=True,
-                   reduce_output='avg'):
+    def eval_batch(self, data_iter, compute_loss=True, reduce_output='avg'):
         """Evaluate the pipeline on a batch of data from ``data_iter``. The
         engine will evaluate ``self.train_batch_size()`` total samples
         collectively across all workers.
@@ -419,7 +391,7 @@ class PipelineEngine(DeepSpeedEngine):
         Returns:
             The arithmetic mean of the losses computed this batch.
         """
-        self.eval_return_logits = return_logits
+
         self.module.eval()
 
         # Curriculum learning could change activation shape
@@ -445,10 +417,6 @@ class PipelineEngine(DeepSpeedEngine):
         sched = schedule.InferenceSchedule(micro_batches=self.micro_batches,
                                            stages=self.num_stages,
                                            stage_id=self.stage_id)
-
-        # prevent dead-lock with multiple evals sequence
-        dist.barrier()
-
         with torch.no_grad():
             self._exec_schedule(sched)
 
@@ -472,11 +440,7 @@ class PipelineEngine(DeepSpeedEngine):
 
         # Reset any buffers that may have been populated during the forward passes.
         #ds_checkpointing.reset()
-        self.eval_return_logits = False
-        if return_logits:
-            outputs = self.outputs
-            self.outputs = None
-            return eval_output, outputs
+
         return eval_output
 
     def set_train_batch_size(self, train_batch_size):
@@ -694,14 +658,13 @@ class PipelineEngine(DeepSpeedEngine):
 
         # Optionally compute loss on the last device
         if self.is_last_stage():
-            if self._compute_loss and self.module.loss_fn is not None:
+            if self._compute_loss and self.loss_model is not None:
                 labels = self.pipe_buffers['labels'][buffer_id]
-                self.loss = self.module.loss_fn(outputs, labels)
+                self.loss = self.loss_model(outputs, labels)
             else:
                 # Some models just return loss from forward()
                 self.loss = outputs
-            if self.eval_return_logits:
-                self.outputs = outputs
+
             if isinstance(self.loss, torch.Tensor):
                 self.fwd_outputs.append(self.loss.detach())
 
@@ -763,10 +726,6 @@ class PipelineEngine(DeepSpeedEngine):
             part_grad = None
             #print(f'RANK={self.global_rank} BEFORE-BWD restored grad={self.grad_layer[0].size()} {self.grad_layer[1].size()}')
 
-        if self.bfloat16_enabled() and not self.is_last_stage():
-            # manually call because we don't call optimizer.backward()
-            self.optimizer.clear_lp_grads()
-
         # This handles either a single tensor or tuple of tensors.
         if isinstance(outputs, tuple):
             out_tensors = [t for t in outputs if t.is_floating_point()]
@@ -774,10 +733,6 @@ class PipelineEngine(DeepSpeedEngine):
             torch.autograd.backward(tensors=out_tensors, grad_tensors=grad_tensors)
         else:
             torch.autograd.backward(tensors=(outputs, ), grad_tensors=(grad_tensors, ))
-
-        if self.bfloat16_enabled() and not self.is_last_stage():
-            # manually call because we don't call optimizer.backward()
-            self.optimizer.update_hp_grads(clear_lp_grads=False)
 
         # Free up the memory from the output of forward()
         self.pipe_buffers['output_tensors'][buffer_id] = None
@@ -961,7 +916,7 @@ class PipelineEngine(DeepSpeedEngine):
         # NCCL does not like to send torch.BoolTensor types, so cast the mask to half().
         # We could do char, but with half() we can eventually flatten with other fp16
         # messages (TODO)
-        if self.has_attention_mask or self.has_bool_tensors:
+        if self.module.__class__.__name__ == 'GPT2ModelPipe' or self.has_bool_tensors:
             outputs = list(outputs)
             outputs[-1] = outputs[-1].half()
             outputs = tuple(outputs)
@@ -980,7 +935,7 @@ class PipelineEngine(DeepSpeedEngine):
                                       f'{type(outputs)}')
 
         # Restore the boolean tensor
-        if self.has_attention_mask or self.has_bool_tensors:
+        if self.module.__class__.__name__ == 'GPT2ModelPipe' or self.has_bool_tensors:
             outputs = list(outputs)
             outputs[-1] = outputs[-1].bool()
             outputs = tuple(outputs)
@@ -1018,7 +973,7 @@ class PipelineEngine(DeepSpeedEngine):
         # a grad that needs to be communicated. We free the buffer immediately
         # after, so no need to restore it. The receiver also has a hack that skips
         # the recv. This is because NCCL does not let us send torch.BoolTensor :-(.
-        if self.has_attention_mask or self.has_bool_tensors:
+        if self.module.__class__.__name__ == 'GPT2ModelPipe' or self.has_bool_tensors:
             inputs = list(inputs)
             inputs.pop()
             inputs = tuple(inputs)
@@ -1079,7 +1034,7 @@ class PipelineEngine(DeepSpeedEngine):
 
             # NCCL does not like to send torch.BoolTensor types, so un-cast the
             # attention mask
-            if self.has_attention_mask or self.has_bool_tensors:
+            if self.module.__class__.__name__ == 'GPT2ModelPipe' or self.has_bool_tensors:
                 recvd[-1] = recvd[-1].bool()
 
             recvd = tuple(recvd)
@@ -1224,11 +1179,8 @@ class PipelineEngine(DeepSpeedEngine):
         Returns:
             A tensor from torch.zeros() allocated on self.device.
         """
-        if "dtype" not in kwargs:
-            if self.fp16_enabled():
-                kwargs["dtype"] = torch.half
-            if self.bfloat16_enabled():
-                kwargs["dtype"] = torch.bfloat16
+        if "dtype" not in kwargs and self.fp16_enabled():
+            kwargs["dtype"] = torch.half
 
         return torch.zeros(shape, device=self.device, **kwargs)
 
@@ -1329,16 +1281,10 @@ class PipelineEngine(DeepSpeedEngine):
         assert self._curr_ckpt_path is not None, \
             "PipelineEngine expects module_state_dict() to be called from save_checkpoint()"
 
-        self.module.save_state_dict(self._curr_ckpt_path,
-                                    tag=tag,
-                                    enable_nebula=self.enable_nebula)
+        self.module.save_state_dict(self._curr_ckpt_path, tag=tag, enable_nebula=self.enable_nebula)
         return None
 
-    def load_module_state_dict(self,
-                               state_dict,
-                               strict=True,
-                               custom_load_fn=None,
-                               tag=None):
+    def load_module_state_dict(self, state_dict, strict=True, tag=None):
         """Override hack to instead use a directory path.
 
         This is important because pipeline models checkpoint by layer instead of rank.
@@ -1349,17 +1295,11 @@ class PipelineEngine(DeepSpeedEngine):
             state_dict (str, None): unused
             strict (bool, optional): Strict state loading. Defaults to True.
         """
-        assert custom_load_fn is None, "custom_load_fn not supported w. pipeline parallelism"
         if (state_dict is not None) and (not isinstance(state_dict, str)):
             super().load_module_state_dict(state_dict, strict)
             return
 
-        self.module.load_state_dir(load_dir=self._curr_ckpt_path,
-                                   strict=strict,
-                                   tag=tag,
-                                   enable_nebula=self.enable_nebula,
-                                   disable_nebula_load=self.disable_nebula_load,
-                                   nebula_load_path=self.nebula_load_path)
+        self.module.load_state_dir(load_dir=self._curr_ckpt_path, strict=strict, tag=tag, enable_nebula=self.enable_nebula)
 
     # A map of PipeInstruction types to methods. Each method will be executed with the
     # kwargs provided to the PipeInstruction from the scheduler.

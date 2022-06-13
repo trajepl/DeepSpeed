@@ -2,8 +2,7 @@ import torch
 import torch.distributed as dist
 import deepspeed
 import pytest
-from .common import distributed_test
-
+from common import distributed_test
 import deepspeed.utils.groups as groups
 
 
@@ -61,7 +60,7 @@ def test_sparse_adam(tmpdir):
 
         results = [
             engine.all_gather_scalar(i,
-                                     groups._get_data_parallel_group())
+                                     groups.get_data_parallel_group())
             for i in model.emb.parameters()
         ]
         for res in results:

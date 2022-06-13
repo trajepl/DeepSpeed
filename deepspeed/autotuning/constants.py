@@ -137,7 +137,7 @@ MODEL_INFO_KEY_DEFAULT_DICT = {
 }
 
 #########################################
-# autotunner search space constants
+# autotunner serach space constants
 #########################################
 
 DEFAULT_HF_CONFIG = {

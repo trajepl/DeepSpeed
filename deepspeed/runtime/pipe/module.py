@@ -1,4 +1,3 @@
-from faulthandler import disable
 import os
 import glob
 import enum
@@ -25,7 +24,6 @@ except ImportError:
         "Warning: cannot find the package of torch-nebula. Will use the legacy way for checkpoint management."
     )
     torch_nebula = None
-
 
 class PipelineError(Exception):
     """Errors related to the use of deepspeed.PipelineModule """
@@ -198,7 +196,6 @@ class PipelineModule(nn.Module):
         self._partition_layers(method=partition_method)
 
         self.forward_funcs = []
-        self.fwd_map = {}
         self.tied_modules = nn.ModuleDict()
         self.tied_weight_attrs = {}
 
@@ -235,7 +232,6 @@ class PipelineModule(nn.Module):
             elif isinstance(layer, nn.Module):
                 name = str(layer_idx)
                 self.forward_funcs.append(layer)
-                self.fwd_map.update({name: len(self.forward_funcs) - 1})
                 self.add_module(name, layer)
 
             # TiedLayerSpec objects contain an nn.Module that should be allocated now.
@@ -259,7 +255,6 @@ class PipelineModule(nn.Module):
                 module = layer.build()
                 name = str(layer_idx)
                 self.forward_funcs.append(module)
-                self.fwd_map.update({name: len(self.forward_funcs) - 1})
                 self.add_module(name, module)
 
             # Last option: layer may be a functional (e.g., lambda). We do nothing in
@@ -431,13 +426,6 @@ class PipelineModule(nn.Module):
             weight = getattr(self.tied_modules[key], comm['weight_attr'])
             dist.all_reduce(weight.grad, group=comm['group'])
 
-    def get_tied_weights_and_groups(self):
-        weight_group_list = []
-        for key, comm in self.tied_comms.items():
-            weight = getattr(self.tied_modules[key], comm['weight_attr'])
-            weight_group_list.append((weight, comm['group']))
-        return weight_group_list
-
     def _synchronize_tied_weights(self):
         for key, comm in self.tied_comms.items():
             dist.broadcast(
@@ -572,7 +560,7 @@ class PipelineModule(nn.Module):
         ckpt_files.sort()
         return ckpt_files
 
-    def save_state_dict(self, save_dir, tag=None, enable_nebula=False):
+    def save_state_dict(self, save_dir, tag=None, num_of_files=None, enable_nebula=False):
         if self._grid.data_parallel_id != 0:
             return
 
@@ -599,13 +587,7 @@ class PipelineModule(nn.Module):
             else:
                 torch.save(final_state_dict, model_ckpt_path)
 
-    def load_state_dir(self,
-                       load_dir,
-                       strict=True,
-                       enable_nebula=False,
-                       tag=None,
-                       disable_nebula_load=False,
-                       nebula_load_path=None):
+    def load_state_dir(self, load_dir, strict=True, enable_nebula=False, tag=None):
         for idx, layer in enumerate(self.forward_funcs):
             # Functions, etc. will not have state_dicts
             if not hasattr(layer, 'load_state_dict'):
@@ -613,16 +595,13 @@ class PipelineModule(nn.Module):
 
             # get all checkpoint files for the layer.
             model_ckpt_list = self.ckpt_layer_path_list(load_dir, idx)
-
-            if not disable_nebula_load and enable_nebula and torch_nebula is not None:
-                latest_checkpoint = torch_nebula.get_latest_checkpoint(
-                    persist_path=nebula_load_path)
+            
+            if enable_nebula and torch_nebula is not None:
+                latest_checkpoint = torch_nebula.get_latest_checkpoint()
                 for model_ckpt_path in model_ckpt_list:
                     partition_name = os.path.basename(model_ckpt_path)
-                    assert (latest_checkpoint.tag == tag)
-                    checkpoint = latest_checkpoint.load(partition_name,
-                                                        map_location=lambda storage,
-                                                        loc: storage)
+                    assert(latest_checkpoint.tag == tag)
+                    checkpoint = latest_checkpoint.load(partition_name, map_location=lambda storage, loc: storage)
                     layer.load_state_dict(checkpoint, strict=strict)
             else:
                 mp_rank = self._grid.get_slice_parallel_rank()

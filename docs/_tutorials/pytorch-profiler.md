@@ -1,6 +1,5 @@
 ---
 title: "Using PyTorch Profiler with DeepSpeed for performance debugging"
-tags: profiling performance-tuning
 ---
 
 This tutorial describes how to use [PyTorch Profiler](https://pytorch.org/blog/introducing-pytorch-profiler-the-new-and-improved-performance-tool/) with DeepSpeed.

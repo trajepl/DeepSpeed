@@ -1,8 +1,5 @@
 #pragma once
 
-#define NOMINMAX  // Windows idiosyncrasy
-                  // https://stackoverflow.com/questions/4913922/possible-problems-with-nominmax-on-visual-c
-
 #include <cuda_fp16.h>
 #include <cuda_runtime_api.h>
 #include <stdio.h>

@@ -1,6 +1,5 @@
 ---
 title: "Learning Rate Range Test"
-tags: training learning-rate
 ---
 This tutorial shows how to use to perform Learning Rate range tests in PyTorch.
 

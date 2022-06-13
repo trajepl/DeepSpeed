@@ -88,33 +88,6 @@ The 1-bit Adam optimizer supports the following three params keys/values in addi
 | cuda\_aware         | To indicate that the underlying MPI library supports CUDA-Aware communication      | false   |
 | comm\_backend\_name | To indicate which backend implementation to use                                    | "nccl"  |
 
-A variant ***optimizer*** for 1-bit Adam is 0/1 Adam, which further optimizes 1-bit Adam via adaptive variance freezing and 1-bit synchronization over optimizer states.
-```json
-"optimizer": {
-    "type": "ZeroOneAdam",
-    "params": {
-      "lr": 1e-3,
-      "weight_decay": 0.01,
-      "bias_correction": false,
-      "var_freeze_step": 1000,
-      "var_update_scaler": 16,
-      "local_step_scaler": 1000,
-      "local_step_clipper": 16,
-      "cuda_aware": false,
-      "comm_backend_name": "nccl"
-    }
-  }
-```
-0/1 Adam supports  the following params key/values in addition to standard Adam (learn more in our [tutorial](/tutorial/zero-one-adam/).)
-| "params" key        | Description                                                                        | Default |
-| ------------------- | ---------------------------------------------------------------------------------- | ------- |
-| var\_freeze\_step   | The latest step to update the variance                                             | 100000  |
-| var\_update\_scaler | The interval to update the variance                                                | 16  |
-| local\_step\_scaler | The interval to scale the local steps interval according to the learning rate policy   | 32678  |
-| local\_step\_clipper | The largest interval for local steps with learning rate policy                     | 16  |
-| cuda\_aware         | To indicate that the underlying MPI library supports CUDA-Aware communication      | false   |
-| comm\_backend\_name | To indicate which backend implementation to use                                    | "nccl"  |
-
 Another example of ***optimizer*** with 1-bit LAMB
 
 ```json
@@ -178,11 +151,11 @@ Example of <i>**scheduler**</i>
 
 ### Communication options
 
-<i>**communication_data_type**</i>: [boolean]
+<i>**fp32_allreduce**</i>: [boolean]
 
-| Description                                                                                                                   | Default |
-| ----------------------------------------------------------------------------------------------------------------------------- | ------- |
-| During gradient averaging perform communication with selected data type. By default it will be determined by selected regime  |  None   |
+| Description                                                    | Default |
+| -------------------------------------------------------------- | ------- |
+| During gradient averaging perform allreduce with 32 bit values | `false` |
 
 <i>**prescale_gradients**</i>: [boolean]
 
@@ -260,7 +233,7 @@ Example of <i>**scheduler**</i>
 | ----------------------------------------------------------------------------------------------------- | ------- |
 | <i>**min_loss_scale**</i> is  a **fp16** parameter representing the minimum dynamic loss scale value. | `1000`  |
 
-### BFLOAT16 training options
+### BFLOAT16 options
 
 **Note:** this mode cannot be combined with the `amp` mode described below.
 {: .notice--warning}
@@ -268,23 +241,26 @@ Example of <i>**scheduler**</i>
 **Note:** this mode cannot be combined with the `fp16` mode described above.
 {: .notice--warning}
 
-<i>**bf16**</i>: [dictionary]
+**Note:** this mode is only compatible with ZeRO stage 2.
+{: .notice--warning}
+
+<i>**bfloat16**</i>: [dictionary]
 
 | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Default |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | Configuration for using [bfloat16](https://en.wikipedia.org/wiki/Bfloat16_floating-point_format) floating-point format as an alternative to FP16. BFLOAT16 requires hardware support (e.g., NVIDIA A100). An example, including the available dictionary keys is illustrated below. Training with bfloat16 does not require loss scaling. | None    |
 
 ```json
-"bf16": {
+"bfloat16": {
    "enabled": true
  }
 ```
 
-<i>**bf16:enabled**</i>: [boolean]
+<i>**bfloat16:enabled**</i>: [boolean]
 
-| Description                                                        | Default |
-|--------------------------------------------------------------------| ------- |
-| <i>**enabled**</i> indicates whether BFLOAT16 training is enabled. | `false` |
+| Description                                                                                 | Default |
+| ------------------------------------------------------------------------------------------- | ------- |
+| <i>**enabled**</i> is a **bfloat16** parameter indicating whether or not BFLOAT16 training enabled. | `false` |
 
 
 ### Automatic mixed precision (AMP) training options
@@ -353,7 +329,7 @@ Enabling and configuring ZeRO memory optimizations
     "stage3_param_persistence_threshold" : 1e6,
     "sub_group_size" : 1e12,
     "elastic_checkpoint" : [true|false],
-    "stage3_gather_16bit_weights_on_model_save": [true|false],
+    "stage3_gather_fp16_weights_on_model_save": [true|false],
     "ignore_unused_parameters": [true|false]
     "round_robin_gradients": [true|false]
     }
@@ -457,11 +433,11 @@ Enabling and configuring ZeRO memory optimizations
 | Do not partition parameters smaller than this threshold. Smaller values use less memory, but can greatly increase communication (especially latency-bound messages). | `1e6`   |
 
 
-***stage3_gather_16bit_weights_on_model_save***: [boolean]
+***stage3_gather_fp16_weights_on_model_save***: [boolean]
 
-| Description                                                                                                                                                                                                                                                                    | Default |
-|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------| ------- |
-| Consolidate the weights before saving the model by `save_16bit_model()`. Since the weights are partitioned across GPUs, they aren't part of `state_dict`, so this function automatically gathers the weights when this option is enabled and then saves the fp16 model weights. | `False` |
+| Description                                                                                                                                                                                                                                                                   | Default |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| Consolidate the weights before saving the model by `save_fp16_model()`. Since the weights are partitioned across GPUs, they aren't part of `state_dict`, so this function automatically gather the weights when this option is enabled and then saves the fp16 model weights. | `False` |
 
 
 ***cpu_offload***: [boolean]
@@ -680,9 +656,9 @@ Configuring the asynchronous I/O module for offloading parameter and optimizer s
 
 <i>**overwrite**</i>: [boolean]
 
-| Description                                                                                                               | Default |
-|---------------------------------------------------------------------------------------------------------------------------| ------- |
-| Whether to run autotuing experiments whose results already exist. Setting it to true would overwrite the existing result. | `false` |
+| Description                                                                               | Default |
+| ----------------------------------------------------------------------------------------- | ------- |
+| Whether to run autotuing experiments whose results alreay exsit. Setting it to true would overwrite the existing result. | `false` |
 
 
 <i>**metric**</i>: [string]

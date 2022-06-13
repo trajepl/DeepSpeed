@@ -15,12 +15,6 @@ class TransformerBuilder(CUDAOpBuilder):
     def absolute_name(self):
         return f'deepspeed.ops.transformer.{self.NAME}_op'
 
-    def extra_ldflags(self):
-        if not self.is_rocm_pytorch():
-            return ['-lcurand']
-        else:
-            return []
-
     def sources(self):
         return [
             'csrc/transformer/ds_transformer_cuda.cpp',
@@ -34,11 +28,4 @@ class TransformerBuilder(CUDAOpBuilder):
         ]
 
     def include_paths(self):
-        includes = ['csrc/includes']
-        if self.is_rocm_pytorch():
-            from torch.utils.cpp_extension import ROCM_HOME
-            includes += [
-                '{}/hiprand/include'.format(ROCM_HOME),
-                '{}/rocrand/include'.format(ROCM_HOME)
-            ]
-        return includes
+        return ['csrc/includes']

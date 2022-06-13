@@ -3,16 +3,13 @@ import torch
 import pytest
 import json
 import argparse
-
-from deepspeed.runtime.zero.config import DeepSpeedZeroConfig
-
-from .common import distributed_test, get_test_path
-from .simple_model import SimpleModel, create_config_from_dict, random_dataloader
+from common import distributed_test, get_test_path
+from simple_model import SimpleModel, create_config_from_dict, random_dataloader
 import torch.distributed as dist
 
 # A test on its own
 import deepspeed
-from deepspeed.runtime.config import DeepSpeedConfig, get_bfloat16_enabled
+from deepspeed.runtime.config import DeepSpeedConfig
 
 
 def test_cuda():
@@ -115,32 +112,6 @@ def test_temp_config_json(tmpdir):
     config_path = create_config_from_dict(tmpdir, config_dict)
     config_json = json.load(open(config_path, 'r'))
     assert 'train_batch_size' in config_json
-
-
-@pytest.mark.parametrize("gather_weights_key",
-                         [
-                             "stage3_gather_16bit_weights_on_model_save",
-                             "stage3_gather_fp16_weights_on_model_save"
-                         ])
-def test_gather_16bit_params_on_model_save(gather_weights_key):
-    config_dict = {
-        "zero_optimization": {
-            gather_weights_key: True,
-        },
-    }
-    config = DeepSpeedZeroConfig(config_dict)
-
-    assert config.gather_16bit_weights_on_model_save == True
-
-
-@pytest.mark.parametrize("bf16_key", ["bf16", "bfloat16"])
-def test_get_bfloat16_enabled(bf16_key):
-    cfg = {
-        bf16_key: {
-            "enabled": True,
-        },
-    }
-    assert get_bfloat16_enabled(cfg) == True
 
 
 def test_deprecated_deepscale_config(tmpdir):

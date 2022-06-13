@@ -2,6 +2,7 @@ import re
 import collections.abc
 import os
 import json
+from ssl import OP_ENABLE_MIDDLEBOX_COMPAT
 from deepspeed.runtime.constants import GRADIENT_ACCUMULATION_STEPS, TRAIN_MICRO_BATCH_SIZE_PER_GPU
 import hjson
 import sys
@@ -102,12 +103,6 @@ def combine_dict(d, u):
 
 
 def del_if_exists(t, d):
-    """Deletes a key from a dictionary if it exists.
-
-    Args:
-        t (string): target key to delete
-        d (dict): dictionary to delete from
-    """
     if t in d:
         del d[t]
         return
@@ -295,7 +290,7 @@ def get_tuning_keys(tuning_space: dict):
     return tuning_keys
 
 
-def get_all_configs(tuning_space: dict, ignore_keys=None):
+def get_all_configs(tuning_space: dict):
     """ Splits the tuning space dictionary to result in all combinations of values.
 
     Args:
@@ -313,12 +308,7 @@ def get_all_configs(tuning_space: dict, ignore_keys=None):
             yield dict(zip(keys, comb))
 
     all_configs = []
-    ignored_key_vals = {}
-    for ik in ignore_keys:
-        ignored_key_vals[ik] = tuning_space.get(ik, {})
-        del_if_exists(ik, tuning_space)
     for c in gen_combinations(tuning_space):
-        replace_dict(c, ignored_key_vals)
         all_configs.append(c)
     return all_configs
 
@@ -328,7 +318,7 @@ def canonical_name(config: dict, tuning_keys=None, prefix="", omit_val=False):
     Args:
         config (dict): the config dict used to generate the name
         tuning_keys (list, optional):  the tuning keys used to generate the name. Defaults to None.
-        prefix (str, optional): a string added to the beginning of the name. Defaults to None.
+        prefix (str, optional): a string added to the begining of the name. Defaults to None.
     """
     if TRAIN_MICRO_BATCH_SIZE_PER_GPU not in tuning_keys:
         tuning_keys.append(TRAIN_MICRO_BATCH_SIZE_PER_GPU)
@@ -402,10 +392,7 @@ def get_first_config(config: dict):
 
     for key, val in cfg.items():
         if isinstance(val, dict):
-            if key == "optimizer":  # use user defined optimizer which might have lists of values as params
-                cfg[key] = val
-            else:
-                cfg[key] = get_first_config(val)
+            cfg[key] = get_first_config(val)
         if isinstance(val, list) and len(val) > 0:
             cfg[key] = val[0]
     return cfg

@@ -25,30 +25,12 @@ from ..utils import logger
 from ..autotuning import Autotuner
 
 DLTS_HOSTFILE = "/job/hostfile"
-EXPORT_ENVS = [
-    'NCCL',
-    'PYTHON',
-    'MV2',
-    'UCX',
-    'DLTS_JOB_ID',
-    'DLTS_NUM_WORKER',
-    'NEBULA_PERSISTENT_STORAGE_PATH',
-    'NEBULA_PERSISTENT_TIME_INTERVAL',
-    'AML_RUN_ID',
-    'AZUREML_RUN_TOKEN',
-    'AZUREML_WORKSPACE_SCOPE',
-    'AZUREML_EXPERIMENT_SCOPE',
-    'AZUREML_RUN_HISTORY_SERVICE_ENDPOINT',
-    'AZUREML_RUN_ID',
-    'NEBULA_MEMORY_BUFFER_SIZE',
-    'AZUREML_PARAMETER_ITPJOB_NAME',
-    'FC_TASKROLE_NAME',
-    'FC_TASK_INDEX',
-    'MASTER_HOST',
-    'LOCAL_HOST',
-    'AZUREML_BLOB_ACCOUNT_NAME',
-    'AZUREML_BLOB_ACCOUNT_KEY'
-]
+EXPORT_ENVS = ['NCCL', 'PYTHON', 'MV2', 'UCX', 'DLTS_JOB_ID', 'DLTS_NUM_WORKER',
+               'NEBULA_PERSISTENT_STORAGE_PATH', 'NEBULA_PERSISTENT_TIME_INTERVAL',
+               'AML_RUN_ID', 'AZUREML_RUN_TOKEN', 'AZUREML_WORKSPACE_SCOPE',
+               'AZUREML_EXPERIMENT_SCOPE', 'AZUREML_RUN_HISTORY_SERVICE_ENDPOINT',
+               'FC_TASKROLE_NAME', 'FC_TASK_INDEX',
+               'AZUREML_RUN_ID', 'NEBULA_MEMORY_BUFFER_SIZE']
 DEEPSPEED_ENVIRONMENT_NAME = ".deepspeed_env"
 DEEPSPEED_ENVIRONMENT_PATHS = [os.path.expanduser("~"), '.']
 PDSH_MAX_FAN_OUT = 1024
@@ -128,37 +110,10 @@ def parse_args(args=None):
                         help="(optional) pass launcher specific arguments as a "
                         "single quoted argument.")
 
-    parser.add_argument("--module",
-                        action="store_true",
-                        help="Change each process to interpret the launch "
-                        "script as a Python module, executing with the same "
-                        "behavior as 'python -m'.")
-
-    parser.add_argument("--no_python",
-                        action="store_true",
-                        help="Skip prepending the training script with "
-                        "'python' - just execute it directly.")
-
-    parser.add_argument("--no_local_rank",
-                        action="store_true",
-                        help="Do not pass local_rank as an argument when calling "
-                        "the user's training script.")
-
-    parser.add_argument("--no_ssh_check",
-                        action="store_true",
-                        help="Do not perform ssh check in multi-node launcher model")
-
     parser.add_argument("--force_multi",
                         action="store_true",
                         help="Force multi-node launcher mode, helps in cases where user "
                         "wants to launch on single remote node.")
-
-    parser.add_argument(
-        "--save_pid",
-        action="store_true",
-        help="Save file containing launcher process id (pid) at /tmp/<main-pid>.ds, "
-        "where <main-pid> is the pid of the first process that invoked `deepspeed`. "
-        "Useful when launching deepspeed processes programmatically.")
 
     parser.add_argument(
         "--autotuning",
@@ -206,16 +161,6 @@ def fetch_hostfile(hostfile_path):
             resource_pool[hostname] = slot_count
 
     return resource_pool
-
-
-def _stable_remove_duplicates(data):
-    # Create a new list in the same order as original but with duplicates
-    # removed, should never be more than ~16 elements so simple is best
-    new_list = []
-    for x in data:
-        if x not in new_list:
-            new_list.append(x)
-    return new_list
 
 
 def parse_resource_filter(host_info, include_str="", exclude_str=""):
@@ -291,7 +236,7 @@ def parse_resource_filter(host_info, include_str="", exclude_str=""):
     del_keys = []
     for hostname in filtered_hosts:
         # Remove duplicates
-        filtered_hosts[hostname] = _stable_remove_duplicates(filtered_hosts[hostname])
+        filtered_hosts[hostname] = list(set(filtered_hosts[hostname]))
         # Remove empty hosts
         if len(filtered_hosts[hostname]) == 0:
             del_keys.append(hostname)
@@ -376,24 +321,10 @@ def main(args=None):
     active_resources = parse_inclusion_exclusion(resource_pool,
                                                  args.include,
                                                  args.exclude)
+
     env = os.environ.copy()
 
-    # validate that passwordless-ssh is workly properly with this hostfile
-    if multi_node_exec and not args.no_ssh_check:
-        first_host = list(active_resources.keys())[0]
-        try:
-            subprocess.check_call(
-                f'ssh -o PasswordAuthentication=no {first_host} hostname',
-                stderr=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                shell=True)
-        except subprocess.CalledProcessError:
-            raise RuntimeError(
-                f"Using hostfile at {args.hostfile} but host={first_host} was not reachable via ssh. If you are running with a single node please remove {args.hostfile} or setup passwordless ssh."
-            )
-
     if not args.master_addr:
-        assert multi_node_exec
         first_host = list(active_resources.keys())[0]
         hostname_cmd = [f"ssh {first_host} hostname -I"]
         result = subprocess.check_output(hostname_cmd, shell=True)
@@ -433,14 +364,6 @@ def main(args=None):
             f"--master_addr={args.master_addr}",
             f"--master_port={args.master_port}"
         ]
-        if args.no_python:
-            deepspeed_launch.append("--no_python")
-        if args.module:
-            deepspeed_launch.append("--module")
-        if args.no_local_rank:
-            deepspeed_launch.append("--no_local_rank")
-        if args.save_pid:
-            deepspeed_launch += ["--save_pid", f"{os.getpid()}"]
         cmd = deepspeed_launch + [args.user_script] + args.user_args
     else:
         args.launcher = args.launcher.lower()
@@ -472,14 +395,13 @@ def main(args=None):
             if os.path.isfile(environ_file):
                 with open(environ_file, 'r') as fd:
                     for var in fd.readlines():
-                        key, val = var.split('=', maxsplit=1)
+                        key, val = var.split('=')
                         runner.add_export(key, val)
 
         cmd = runner.get_cmd(env, active_resources)
 
     logger.info(f"cmd = {' '.join(cmd)}")
     result = subprocess.Popen(cmd, env=env)
-
     result.wait()
 
     # In case of failure must propagate the error-condition back to the caller (usually shell). The

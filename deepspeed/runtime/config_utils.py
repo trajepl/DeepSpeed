@@ -7,7 +7,6 @@ Collection of DeepSpeed configuration utilities
 """
 import json
 import collections
-import collections.abc
 
 
 # adapted from https://stackoverflow.com/a/50701137/9201239
@@ -32,13 +31,13 @@ class ScientificNotationEncoder(json.JSONEncoder):
                 return f"{o:e}"
             else:
                 return f"{o}"
-        elif isinstance(o, collections.abc.Mapping):
+        elif isinstance(o, collections.Mapping):
             x = [
                 f'\n{prefix}"{k}": {self.iterencode(v, level=level)}' for k,
                 v in o.items()
             ]
             return "{" + ', '.join(x) + f"\n{prefix_close}" + "}"
-        elif isinstance(o, collections.abc.Sequence) and not isinstance(o, str):
+        elif isinstance(o, collections.Sequence) and not isinstance(o, str):
             return f"[{ f', '.join(map(self.iterencode, o)) }]"
         return "\n, ".join(super().iterencode(o, _one_shot))
 

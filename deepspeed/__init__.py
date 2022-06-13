@@ -28,7 +28,6 @@ from .utils import log_dist
 from .utils.distributed import init_distributed
 
 from .runtime import zero
-from .runtime import DeepSpeedOptimizer, ZeROOptimizer
 
 from .pipe import PipelineModule
 
@@ -62,8 +61,6 @@ def initialize(args=None,
                config=None,
                config_params=None,
                enable_nebula=None,
-               disable_nebula_load=False,
-               nebula_load_path=None,
                nebula_config_params=None):
     """Initialize the DeepSpeed Engine.
 
@@ -133,8 +130,6 @@ def initialize(args=None,
                                  config=config,
                                  config_params=config_params,
                                  enable_nebula=enable_nebula,
-                                 disable_nebula_load=disable_nebula_load,
-                                 nebula_load_path=nebula_load_path,
                                  nebula_config_params=nebula_config_params)
     else:
         assert mpu is None, "mpu must be None with pipeline parallelism"
@@ -150,8 +145,6 @@ def initialize(args=None,
                                 config=config,
                                 config_params=config_params,
                                 enable_nebula=enable_nebula,
-                                disable_nebula_load=disable_nebula_load,
-                                nebula_load_path=nebula_load_path,
                                 nebula_config_params=nebula_config_params)
 
     return_items = [
@@ -219,18 +212,6 @@ def _add_core_arguments(parser):
         "Save checkpoint via torch_nebula.save, this will attempt to save the time from torch.save")
 
     group.add_argument(
-        '--disable_nebula_load',
-        default=False,
-        action='store_true',
-        help=
-        "Load checkpoint via the way which customers want, this will need the converter functions to convert the tier3 storage path")
-
-    group.add_argument(
-        '--nebula_load_path',
-        default=None,
-        help="Load nebula checkpoint via the path which customers specified")
-
-    group.add_argument(
         '--persistent_storage_path',
         default=None,
         help="Iter3 path for persistence")
@@ -265,38 +246,23 @@ def add_config_arguments(parser):
 
 
 def init_inference(model,
-                   triangular_masking=True,
                    mp_size=1,
-                   training_mp_size=1,
                    mpu=None,
-                   ep_group=None,
-                   expert_mp_group=None,
                    checkpoint=None,
+                   module_key='module',
                    dtype=None,
                    injection_policy=None,
                    replace_method='auto',
                    quantization_setting=None,
                    replace_with_kernel_inject=False,
-                   return_tuple=True,
-                   ep_size=1,
-                   moe=False,
-                   moe_experts=1,
-                   moe_type='standard',
-                   args=None,
-                   enable_cuda_graph=False):
+                   return_tuple=True):
     """Initialize the DeepSpeed InferenceEngine.
 
     Arguments:
         model: Required: nn.module class before apply any wrappers
 
-        triangular_masking: Required: this shows the type of masking for attention scores in transformer layer
-            note that the masking is application specific.
-
         mp_size: Optional: Desired model parallel size, default is 1 meaning no
             model parallelism.
-
-        training_mp_size: Optional: if loading a checkpoint this is the mp size that it was trained with,
-            it may be different than what the mp size that you want to use during inference.
 
         mpu: Optional: A model parallelism unit object that implements
             get_{model,data}_parallel_{rank,group,world_size}()
@@ -330,25 +296,18 @@ def init_inference(model,
         __git_branch__),
              ranks=[0])
 
-    engine = InferenceEngine(model,
-                             triangular_masking,
-                             mp_size,
-                             training_mp_size,
-                             ep_size,
-                             mpu,
-                             ep_group,
-                             expert_mp_group,
-                             checkpoint,
-                             dtype,
-                             injection_policy,
-                             return_tuple,
-                             replace_method,
-                             quantization_setting,
-                             replace_with_kernel_inject,
-                             moe,
-                             moe_experts,
-                             moe_type,
-                             args,
-                             enable_cuda_graph)
+    if isinstance(model, PipelineModule):
+        raise NotImplementedError("pipeline module support is not implemented yet")
+    else:
+        engine = InferenceEngine(model,
+                                 mp_size,
+                                 mpu,
+                                 checkpoint,
+                                 dtype,
+                                 injection_policy,
+                                 return_tuple,
+                                 replace_method,
+                                 quantization_setting,
+                                 replace_with_kernel_inject)
 
     return engine

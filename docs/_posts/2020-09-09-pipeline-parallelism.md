@@ -1,8 +1,10 @@
 ---
+layout: single
 title: "Training a Trillion Parameters with Pipeline Parallelism"
 excerpt: ""
+categories: news
+new_post: true
 date: 2020-09-09 00:00:00
-tags: training
 ---
 
 DeepSpeed includes new support for pipeline parallelism! DeepSpeed's training
