@@ -2252,7 +2252,7 @@ class DeepSpeedEngine(Module):
         num_local_experts = self.num_experts // self.ep_world_size
         for local_expert_id in range(num_local_experts):
             global_expert_id = expp_rank * num_local_experts + local_expert_id
-            expert_ckpt_name = self._get_expert_ckpt_name(checkpoint_path,global_expert_id,tag),
+            expert_ckpt_name = self._get_expert_ckpt_name(checkpoint_path,global_expert_id,tag)
             expert_state_dict = load_func(expert_ckpt_name, map_location=torch.device('cpu'))
             # Updating global -> local expert ids
             moe_str_prefix = '.deepspeed_moe.experts.deepspeed_experts.'
