@@ -46,7 +46,7 @@ __global__ void dequantize_kernel(__half* output,
                                   unsigned groups,
                                   unsigned merge_count)
 {
-#ifdef HALF_PRECISION_AVAILABLE
+#if __CUDA_ARCH__ >= 700
 
     unsigned merge_hidden = hidden_dim >> merge_count;
     unsigned quantization_stride = (merge_hidden * output_size) / groups;

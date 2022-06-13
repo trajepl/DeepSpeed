@@ -172,17 +172,16 @@ Please see the [core API doc](https://deepspeed.readthedocs.io/) for more detail
 
 ## Training Optimizers
 
-### 1-bit Adam, 0/1 Adam and 1-bit LAMB optimizers with up to 26x less communication
+### 1-bit Adam and 1-bit LAMB optimizers with up to 5x less communication
 
-DeepSpeed has three communication-efficient optimizers called 1-bit Adam, 0/1 Adam and 1-bit LAMB.
-They offer the same convergence as Adam/LAMB, incur up to 26x less communication that enables
-up to 6.6x higher throughput for BERT-Large pretraining and up to 2.7x higher throughput
+DeepSpeed has two communication-efficient optimizers called 1-bit Adam and 1-bit LAMB.
+They offer the same convergence as Adam/LAMB, incur up to 5x less communication that enables
+up to 3.5x higher throughput for BERT-Large pretraining and up to 2.7x higher throughput
 for SQuAD fine-tuning on bandwidth-limited clusters. For more details on usage and performance,
 please refer to the [1-bit Adam tutorial](https://www.deepspeed.ai/tutorials/onebit-adam),
 [1-bit Adam blog post](https://www.deepspeed.ai/news/2020/09/09/onebit-adam-blog-post.md),
-[0/1 Adam tutorial](https://www.deepspeed.ai/tutorials/zero-one-adam)
 and [1-bit LAMB tutorial](https://www.deepspeed.ai/tutorials/onebit-lamb/). For technical details,
-please refer to the [1-bit Adam paper](https://arxiv.org/abs/2102.02888), [0/1 Adam paper](https://arxiv.org/abs/2202.06009) and
+please refer to the [1-bit Adam paper](https://arxiv.org/abs/2102.02888) and
 [1-bit LAMB paper](https://arxiv.org/abs/2104.06069).
 
 ### Fused Adam optimizer and arbitrary torch.optim.Optimizer
@@ -242,9 +241,6 @@ DeepSpeed abstracts away data parallelism and model parallelism from the user wh
 comes to data loading. Users simply provide a PyTorch dataset, and DeepSpeed data loader
 can automatically handle batch creation appropriately.
 
-## Curriculum Learning
-Please refer to the [Curriculum Learning](/tutorials/curriculum-learning/) tutorial.
-
 ## Performance Analysis and Debugging
 
 DeepSpeed provides a set of tools for performance analysis and debugging.
@@ -293,36 +289,6 @@ The DeepSpeed flops profiler measures the time, flops and parameters of a PyTorc
 ```
 The flops profiler can also be used as a standalone package. Please refer to the [Flops Profiler](/tutorials/flops-profiler) tutorial for more details.
 
-
-### Autotuning
-
-The DeepSpeed Autotuner  uses model information, system information, and heuristics to efficiently tune Zero stage, micro batch size, and other Zero configurations. Using the autotuning feature requires no code change from DeepSpeed users. While `"autotuning": {"enabled": true}` is the minimal required to enable auotuning, there are other parameters users can define to configure the autotuning process. Below shows major parameters and their default values in the autotuning configuration. Please refer to the [Autotuning](/tutorials/autotuning) tutorial for more details.
-
-```json
-{
-  "autotuning": {
-    "enabled": true,
-    "results_dir": null,
-    "exps_dir": null,
-    "overwrite": false,
-    "metric": "throughput",
-    "num_nodes": null,
-    "num_gpus": null,
-    "start_profile_step": 3,
-    "end_profile_step": 5,
-    "fast": true,
-    "num_tuning_micro_batch_sizes": 3,
-    "tuner_type": "model_based",
-    "tuner_early_stopping": 5,
-    "tuner_num_trials": 50,
-    "arg_mappings": null
-  }
-}
-
-```
-The flops profiler can also be used as a standalone package. Please refer to the [Flops Profiler](/tutorials/flops-profiler) tutorial for more details.
-
-
 ## Sparse Attention
 DeepSpeed offers sparse attention to support long sequences. Please refer to the [Sparse Attention](/tutorials/sparse-attention/) tutorial.
 
@@ -342,6 +308,3 @@ DeepSpeed offers sparse attention to support long sequences. Please refer to the
     "num_different_global_patterns": 4
 }
 ```
-
-## Mixture of Experts (MoE)
-To learn more about training Mixture of Experts (MoE) models with DeepSpeed, see our [tutorial](https://www.deepspeed.ai/tutorials/mixture-of-experts/) for more details.

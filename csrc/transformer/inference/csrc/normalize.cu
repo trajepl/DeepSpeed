@@ -1,9 +1,7 @@
 #include <limits>
 #include "custom_cuda_layers.h"
 
-#ifndef __HIP_PLATFORM_HCC__
 #include <cuda_profiler_api.h>
-#endif
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
@@ -87,7 +85,7 @@ __global__ void fused_bias_residual_layer_norm(__half* output,
                                                float epsilon,
                                                int row_stride)
 {
-#ifdef HALF_PRECISION_AVAILABLE
+#if __CUDA_ARCH__ >= 700
     int iteration_stride = blockDim.x;
     int iterations = row_stride / iteration_stride;
 
@@ -213,8 +211,7 @@ __global__ void fused_residual_layer_norm(float* norm,
                                           const float* beta,
                                           float epsilon,
                                           int row_stride,
-                                          bool preLN,
-                                          bool mlp_after_attn)
+                                          bool preLN)
 {
     int iteration_stride = blockDim.x;
 
@@ -236,8 +233,8 @@ __global__ void fused_residual_layer_norm(float* norm,
         inp_reg[k] = vals[input_id + row * row_stride];
         float res_f = (residual[input_id + row * row_stride]);
         float bias_f = (bias[input_id]);
-        if (mlp_after_attn) inp_reg[k] += res_f + bias_f;
-        // if (preLN) res_add[input_id + row * row_stride] = inp_reg[k];
+        inp_reg[k] += res_f + bias_f;
+        if (preLN) res_add[input_id + row * row_stride] = inp_reg[k];
         sum += inp_reg[k++];
         input_id += iteration_stride;
     }
@@ -288,10 +285,9 @@ __global__ void fused_residual_layer_norm(__half* norm,
                                           const __half* beta,
                                           float epsilon,
                                           int row_stride,
-                                          bool preLN,
-                                          bool mlp_after_attn)
+                                          bool preLN)
 {
-#ifdef HALF_PRECISION_AVAILABLE
+#if __CUDA_ARCH__ >= 700
     int iteration_stride = blockDim.x;
 
     cg::thread_block b = cg::this_thread_block();
@@ -319,13 +315,11 @@ __global__ void fused_residual_layer_norm(__half* norm,
         float2 inp_f = __half22float2(inp_reg[k]);
         float2 res_f = __half22float2(residual_cast[input_id + row * row_stride]);
         float2 bias_f = __half22float2(bias_cast[input_id]);
-        if (mlp_after_attn) {
-            inp_f.x += res_f.x + bias_f.x;
-            inp_f.y += res_f.y + bias_f.y;
-        }
+        inp_f.x += res_f.x + bias_f.x;
+        inp_f.y += res_f.y + bias_f.y;
         inp_reg[k] = __float22half2_rn(inp_f);
-        // if (preLN) res_add_cast[input_id + row * row_stride] = __float22half2_rn(res_f);
-        // //inp_reg[k];
+
+        if (preLN) res_add_cast[input_id + row * row_stride] = inp_reg[k];
         sum += inp_f.x + inp_f.y;
         input_id += iteration_stride;
         k++;
@@ -382,7 +376,6 @@ void launch_residual_layer_norm(T* norm,
                                 int batch_size,
                                 int hidden_dim,
                                 bool preLN,
-                                bool mlp_after_attn,
                                 cudaStream_t stream);
 
 template <>
@@ -397,7 +390,6 @@ void launch_residual_layer_norm<float>(float* norm,
                                        int batch_size,
                                        int hidden_dim,
                                        bool preLN,
-                                       bool mlp_after_attn,
                                        cudaStream_t stream)
 {
     constexpr int threads = 1024;
@@ -406,17 +398,8 @@ void launch_residual_layer_norm<float>(float* norm,
 
     dim3 block_dim(threads);
 
-    fused_residual_layer_norm<<<grid_dim, block_dim, 0, stream>>>(norm,
-                                                                  res_add,
-                                                                  vals,
-                                                                  residual,
-                                                                  bias,
-                                                                  gamma,
-                                                                  beta,
-                                                                  epsilon,
-                                                                  hidden_dim,
-                                                                  preLN,
-                                                                  mlp_after_attn);
+    fused_residual_layer_norm<<<grid_dim, block_dim, 0, stream>>>(
+        norm, res_add, vals, residual, bias, gamma, beta, epsilon, hidden_dim, preLN);
 }
 
 template <>
@@ -431,7 +414,6 @@ void launch_residual_layer_norm<__half>(__half* norm,
                                         int batch_size,
                                         int hidden_dim,
                                         bool preLN,
-                                        bool mlp_after_attn,
                                         cudaStream_t stream)
 {
     constexpr int threads = 1024;
@@ -439,15 +421,6 @@ void launch_residual_layer_norm<__half>(__half* norm,
     dim3 grid_dim(batch_size);
     dim3 block_dim(threads);
 
-    fused_residual_layer_norm<<<grid_dim, block_dim, 0, stream>>>(norm,
-                                                                  res_add,
-                                                                  vals,
-                                                                  residual,
-                                                                  bias,
-                                                                  gamma,
-                                                                  beta,
-                                                                  epsilon,
-                                                                  hidden_dim / 2,
-                                                                  preLN,
-                                                                  mlp_after_attn);
+    fused_residual_layer_norm<<<grid_dim, block_dim, 0, stream>>>(
+        norm, res_add, vals, residual, bias, gamma, beta, epsilon, hidden_dim / 2, preLN);
 }

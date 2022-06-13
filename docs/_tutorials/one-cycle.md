@@ -1,6 +1,5 @@
 ---
 title: "1-Cycle Schedule"
-tags: training learning-rate
 ---
 
 This tutorial shows how to implement 1Cycle schedules for learning rate and
@@ -24,9 +23,9 @@ Started](/getting-started/) guide.
 model. We will define the 1-Cycle parameters below.
 
 ## Overview
-The 1-cycle schedule operates in two phases, a cycle phase and a decay phase
+The 1-cycle schedule operates in two phases, a cycle phase and a decay phase,
 which span one iteration over the training data. For concreteness, we will
-review how the 1-cycle learning rate schedule works. In the cycle phase,
+review how 1-cycle schedule of learning rate works. In the cycle phase,
 the learning rate oscillates between a minimum value and a maximum value over a
 number of training steps. In the decay phase, the learning rate decays starting
 from the minimum value of the cycle phase. An example of 1-cycle learning rate
@@ -37,10 +36,10 @@ schedule during model training is illustrated below.
 ### 1-Cycle Parameters
 
 The 1-Cycle schedule is defined by a number of parameters which allow users
-to explore different configurations. The literature recommends concurrent tuning
+explore different configurations. The literature recommends concurrent tuning
 of learning rate and momentum because they are correlated hyperparameters. We
 have leveraged this recommendation to reduce configuration burden by organizing
-the 1-cycle parameters into two groups:
+the 1-cycle parameters into two groups to:
 
 1. Global parameters for configuring the cycle and decay phase
 2. Local parameters for configuring learning rate and momentum

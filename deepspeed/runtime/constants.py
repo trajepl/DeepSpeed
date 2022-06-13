@@ -71,7 +71,7 @@ MAX_GRAD_NORM = 'max_grad_norm'
 # Optimizer and lr scheduler
 #############################################
 ZERO_ALLOW_UNTESTED_OPTIMIZER = "zero_allow_untested_optimizer"
-ZERO_ALLOW_UNTESTED_OPTIMIZER_DEFAULT = False
+ZERO_ALLOW_UNTESTED_OPTIMIZER_DEFAULT = True
 
 # Steps
 STEPS_PER_PRINT = "steps_per_print"
@@ -106,23 +106,6 @@ GRADIENT_ACCUMULATION_STEPS_DEFAULT = None
 # DeepSpeed CSR gradient sparsity
 SPARSE_GRADIENTS = "sparse_gradients"
 SPARSE_GRADIENTS_DEFAULT = False
-
-#########################################
-# BFLOAT16 support
-#########################################
-# BFLOAT16 feature. By default, this feature is not enabled.
-# Users can configure in ds_config.json as below example:
-BFLOAT16_FORMAT = '''
-BFLOAT16 parameters should be of the format:
-"bf16": {
-  "enabled": true
-}
-'''
-BFLOAT16 = "bf16"
-BFLOAT16_OLD = "bfloat16"  # keeping for backwards compatibility
-
-BFLOAT16_ENABLED = "enabled"
-BFLOAT16_ENABLED_DEFAULT = False
 
 #########################################
 # FP16 support
@@ -165,10 +148,6 @@ FP16_HYSTERESIS_DEFAULT = 2
 FP16_MIN_LOSS_SCALE = "min_loss_scale"
 FP16_MIN_LOSS_SCALE_DEFAULT = 1
 
-# FP16 master and grads
-FP16_MASTER_WEIGHTS_AND_GRADS = "fp16_master_weights_and_grads"
-FP16_MASTER_WEIGHTS_AND_GRADS_DEFAULT = False
-
 #########################################
 # Apex AMP support
 #########################################
@@ -200,17 +179,16 @@ GRADIENT_CLIPPING = 'gradient_clipping'
 GRADIENT_CLIPPING_DEFAULT = 0.
 
 #########################################
-# Communication data type
+# FP32 AllReduce
 #########################################
-# Supported types: ['none', 'fp16', 'fp32']
-# By default, this feature is not enabled ('none' value)
+# FP32 All reduce. By default, this feature is not enabled.
 # Users can configure in ds_config.json as below example:
-COMMUNICATION_DATA_TYPE_FORMAT = '''
-Communication data type should be set as:
-"communication_data_type": "fp32"
+FP32_ALLREDUCE_FORMAT = '''
+FP32 Allreduce should be enabled as:
+"fp32_allreduce": true
 '''
-COMMUNICATION_DATA_TYPE = "communication_data_type"
-COMMUNICATION_DATA_TYPE_DEFAULT = None
+FP32_ALLREDUCE = "fp32_allreduce"
+FP32_ALLREDUCE_DEFAULT = False
 
 #########################################
 # Scale/predivide gradients before allreduce
@@ -434,20 +412,3 @@ QUANTIZE_ROUNDING_DEFAULT = 0  #nearest
 FP16_MIXED_QUANTIZE_ENABLED_DEFAULT = False
 QUANTIZE_CHANGE_RATIO_DEFAULT = 0.001
 QUANTIZE_VERBOSE_DEFAULT = False
-
-#########################################
-# Drop the last incomplete Batch
-# #########################################
-# dataloader_drop_last. By default, this feature is not enabled.
-# Users can configure in ds_config.json as below example:
-DATALOADER_DROP_LAST_FORMAT = '''
-The last incomplete batch can be dropped by setting:
-"dataloader_drop_last": True
-'''
-DATALOADER_DROP_LAST = "dataloader_drop_last"
-DATALOADER_DROP_LAST_DEFAULT = False
-
-#########################################
-# PIPELINE PARALLELISM
-#########################################
-PIPE_REPLICATED = 'ds_pipe_replicated'

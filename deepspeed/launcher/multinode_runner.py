@@ -3,7 +3,6 @@ import sys
 import shutil
 import subprocess
 import warnings
-from shlex import quote
 from abc import ABC, abstractmethod
 
 from ..utils import logger
@@ -13,7 +12,6 @@ from .constants import PDSH_MAX_FAN_OUT, MVAPICH_TMP_HOSTFILE
 class MultiNodeRunner(ABC):
     def __init__(self, args, world_info_base64):
         self.args = args
-        self.validate_args()
         self.user_arguments = self.parse_user_args()
         self.user_script = args.user_script
         self.world_info_base64 = world_info_base64
@@ -21,25 +19,17 @@ class MultiNodeRunner(ABC):
 
     @abstractmethod
     def backend_exists(self):
-        """Return whether the corresponding backend exists"""
+        pass
 
     @abstractmethod
     def get_cmd(self, environment, active_resources):
-        """Return the command to execute on node"""
+        pass
 
     def add_export(self, key, var):
         self.exports[key.strip()] = var.strip()
 
     def parse_user_args(self):
         return self.args.user_args
-
-    @property
-    def name(self):
-        """Return the name of the backend"""
-        return self.__class__.__name__
-
-    def validate_args(self):
-        """Validate self.args"""
 
 
 class PDSHRunner(MultiNodeRunner):
@@ -49,13 +39,9 @@ class PDSHRunner(MultiNodeRunner):
     def backend_exists(self):
         return shutil.which('pdsh')
 
-    @property
-    def name(self):
-        return "pdsh"
-
     def parse_user_args(self):
         return list(
-            map(lambda x: x if x.startswith("-") else f"'{x}'",
+            map(lambda x: x if x.startswith("-") else "'{}'".format(x),
                 self.args.user_args))
 
     def get_cmd(self, environment, active_resources):
@@ -72,28 +58,19 @@ class PDSHRunner(MultiNodeRunner):
         for key, val in self.exports.items():
             exports += "export {}={}; ".format(key, val)
 
-        # https://linux.die.net/man/1/pdsh
-        # %n will be replaced by pdsh command
         deepspeed_launch = [
             exports,
-            f"cd {os.path.abspath('.')};",
+            "cd {};".format(os.path.abspath('.')),
             sys.executable,
             "-u",
             "-m",
             "deepspeed.launcher.launch",
-            f'--world_info={self.world_info_base64}',
+            '--world_info={}'.format(self.world_info_base64),
             "--node_rank=%n",
-            f"--master_addr={self.args.master_addr}",
-            f"--master_port={self.args.master_port}"
+            "--master_addr={}".format(self.args.master_addr),
+            "--master_port={}".format(self.args.master_port)
         ]
-        if self.args.no_python:
-            deepspeed_launch.append("--no_python")
-        if self.args.module:
-            deepspeed_launch.append("--module")
-        if self.args.no_local_rank:
-            deepspeed_launch.append("--no_local_rank")
-        if self.args.save_pid:
-            deepspeed_launch += ["--save_pid", f"{os.getpid()}"]
+
         return pdsh_cmd_args + deepspeed_launch + [self.user_script
                                                    ] + self.user_arguments
 
@@ -108,21 +85,10 @@ class OpenMPIRunner(MultiNodeRunner):
         #TODO: if IB is available we should suggestion mvapich
         return shutil.which('ompi_info')
 
-    @property
-    def name(self):
-        return "openmpi"
-
-    def validate_args(self):
-        super().validate_args()
-        #TODO: Allow for include/exclude at node-level but not gpu-level
-        if self.args.include != "" or self.args.exclude != "":
-            raise ValueError(
-                f"{self.name} backend does not support worker include/exclusion")
-        if self.args.num_nodes != -1 or self.args.num_gpus != -1:
-            raise ValueError(
-                f"{self.name} backend does not support limiting num nodes/gpus")
-
     def get_cmd(self, environment, active_resources):
+        #TODO: Allow for include/exclude at node-level but not gpu-level
+        assert self.args.include == "" and self.args.exclude == "", 'openmpi backend does not support worker include/exclusion'
+        assert self.args.num_nodes == -1 and self.args.num_gpus == -1, 'openmpi backend does not support limiting num nodes/gpus'
         total_process_count = sum(self.resource_pool.values())
 
         mpirun_cmd = [
@@ -141,13 +107,9 @@ class OpenMPIRunner(MultiNodeRunner):
 
         export_cmd = []
         for k, v in self.exports.items():
-            export_cmd += ['-x', "{}={}".format(k, v)]
+            export_cmd += ['-x', f'{k}={v}']
 
-        python_exec = []
-        if not self.args.no_python:
-            python_exec = [sys.executable, "-u"]
-            if self.args.module:
-                python_exec.append("-m")
+        python_exec = [sys.executable, "-u"]
 
         return mpirun_cmd + export_cmd + python_exec + [self.user_script
                                                         ] + self.user_arguments
@@ -194,26 +156,14 @@ class MVAPICHRunner(MultiNodeRunner):
                 )
         return exists
 
-    @property
-    def name(self):
-        return "mvapich"
-
-    def validate_args(self):
-        super().validate_args()
-        #TODO: Allow for include/exclude at node-level but not gpu-level
-        if self.args.include != "" or self.args.exclude != "":
-            raise ValueError(
-                f"{self.name} backend does not support worker include/exclusion")
-        if self.args.num_nodes != -1 or self.args.num_gpus != -1:
-            raise ValueError(
-                f"{self.name} backend does not support limiting num nodes/gpus")
-
     def get_cmd(self, environment, active_resources):
+        #TODO: Allow for include/exclude at node-level but not gpu-level
+        assert self.args.include == "" and self.args.exclude == "", 'mvapich backend does not support worker include/exclusion'
+        assert self.args.num_nodes == -1 and self.args.num_gpus == -1, 'mvapich backend does not support limiting num nodes/gpus'
         devices_per_node = self.resource_pool.values()
         total_process_count = sum(devices_per_node)
         process_per_node = list(devices_per_node)[0]
-        if not all([n == process_per_node for n in devices_per_node]):
-            raise ValueError("mvapich requires same number of devices per node")
+        assert all([n == process_per_node for n in devices_per_node]), "mvapich requires same number of devices per node"
 
         with open(MVAPICH_TMP_HOSTFILE, 'w') as fd:
             for host in self.resource_pool.keys():
@@ -231,13 +181,9 @@ class MVAPICHRunner(MultiNodeRunner):
 
         export_cmd = []
         for k, v in self.exports.items():
-            export_cmd += ['-env', "{}={}".format(k, v)]
+            export_cmd += ['-env', f'{k}={v}']
 
-        python_exec = []
-        if not self.args.no_python:
-            python_exec = [sys.executable, "-u"]
-            if self.args.module:
-                python_exec.append("-m")
+        python_exec = [sys.executable, "-u"]
 
         return mpirun_cmd + export_cmd + python_exec + [self.user_script
                                                         ] + self.user_arguments

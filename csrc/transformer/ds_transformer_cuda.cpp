@@ -19,15 +19,15 @@ const int init_seq_length = 128;
 // C++ interface
 
 template <typename T>
-unsigned get_workspace_size(unsigned maxBatchSize,
-                            unsigned seq_len,
-                            unsigned hidden_size,
-                            unsigned intermediate_size,
-                            unsigned heads,
-                            bool training,
-                            bool gelu_checkpoint)
+int get_workspace_size(int maxBatchSize,
+                       int seq_len,
+                       int hidden_size,
+                       int intermediate_size,
+                       int heads,
+                       bool training,
+                       bool gelu_checkpoint)
 {
-    unsigned workSpacesize = 4 * (size_t(maxBatchSize) * seq_len * hidden_size);
+    int workSpacesize = 4 * (size_t(maxBatchSize) * seq_len * hidden_size);
     if (training) {
         workSpacesize += 2 * (size_t(maxBatchSize) * seq_len * hidden_size);
         workSpacesize += ((std::max)((size_t(maxBatchSize) * seq_len * intermediate_size),
@@ -46,12 +46,12 @@ unsigned get_workspace_size(unsigned maxBatchSize,
     CHECK_CONTIGUOUS(x)
 
 template <typename T>
-BertTransformerLayer<T>::BertTransformerLayer(unsigned layer_id,
-                                              unsigned batch_size,
-                                              unsigned hidden_size,
-                                              unsigned num_heads,
-                                              unsigned intermediate_size,
-                                              unsigned seq_length,
+BertTransformerLayer<T>::BertTransformerLayer(int layer_id,
+                                              int batch_size,
+                                              int hidden_size,
+                                              int num_heads,
+                                              int intermediate_size,
+                                              int seq_length,
                                               float attn_prob_dropout_ratio,
                                               float hidden_output_dropout_ratio,
                                               float layer_norm_eps,
@@ -140,13 +140,11 @@ BertTransformerLayer<T>::~BertTransformerLayer()
 template <typename T>
 void BertTransformerLayer<T>::Initialize()
 {
-#ifndef __HIP_PLATFORM_HCC__
     if (std::is_same<T, __half>::value) cublasSetMathMode(_cublasHandle, CUBLAS_TENSOR_OP_MATH);
-#endif
 }
 
 template <typename T>
-void BertTransformerLayer<T>::Forward(unsigned bsz,
+void BertTransformerLayer<T>::Forward(int bsz,
                                       const T* input_ptr,
                                       const T* input_mask_ptr,
                                       const T* attn_qkvw_ptr,
@@ -294,7 +292,7 @@ void BertTransformerLayer<T>::Forward(unsigned bsz,
 }
 
 template <typename T>
-void BertTransformerLayer<T>::Backward(unsigned bsz,
+void BertTransformerLayer<T>::Backward(int bsz,
                                        const T* grad_output_ptr,
                                        const T* input_ptr,
                                        const T* output_ptr,
@@ -577,7 +575,7 @@ void BertTransformerLayer<T>::SetIntermediateBuffers(uint8_t* attn_prob_dropout_
 }
 
 template <typename T>
-void BertTransformerLayer<T>::SetSeqLength(unsigned seq_len)
+void BertTransformerLayer<T>::SetSeqLength(int seq_len)
 {
     _seq_length = seq_len;
 
@@ -588,11 +586,11 @@ void BertTransformerLayer<T>::SetSeqLength(unsigned seq_len)
 }
 
 template <typename T>
-int create_transformer_layer(unsigned layer_id,
-                             unsigned batch_size,
-                             unsigned hidden_dim,
-                             unsigned num_heads,
-                             unsigned intermediate_size,
+int create_transformer_layer(int layer_id,
+                             int batch_size,
+                             int hidden_dim,
+                             int num_heads,
+                             int intermediate_size,
                              float attn_dropout_ratio,
                              float hidden_dropout_ratio,
                              float layer_norm_eps,
@@ -635,7 +633,7 @@ int create_transformer_layer(unsigned layer_id,
 }
 
 template <typename T>
-std::vector<torch::Tensor> ds_transformer_forward(unsigned layer_id,
+std::vector<torch::Tensor> ds_transformer_forward(int layer_id,
                                                   const torch::Tensor& input,
                                                   const torch::Tensor& input_mask,
                                                   const torch::Tensor& attn_qkvw,
@@ -671,7 +669,7 @@ std::vector<torch::Tensor> ds_transformer_forward(unsigned layer_id,
     CHECK_INPUT(norm_w);
     CHECK_INPUT(norm_b);
 
-    unsigned bsz = input.size(0);
+    int bsz = input.size(0);
 
     const T* input_ptr = (const T*)input.data_ptr();
     const T* input_mask_ptr = (const T*)input_mask.data_ptr();
@@ -706,7 +704,7 @@ std::vector<torch::Tensor> ds_transformer_forward(unsigned layer_id,
     std::shared_ptr<BertTransformerLayer<T>> layer =
         std::static_pointer_cast<BertTransformerLayer<T>>(s_transformer_layers[layer_id]);
 
-    unsigned seq_len = layer->GetSeqLength();
+    int seq_len = layer->GetSeqLength();
     if (input.size(1) != seq_len) {
         seq_len = input.size(1);
         layer->SetSeqLength(seq_len);
@@ -820,7 +818,7 @@ std::vector<torch::Tensor> ds_transformer_forward(unsigned layer_id,
 }
 
 template <typename T>
-std::vector<torch::Tensor> ds_transformer_backward(unsigned layer_id,
+std::vector<torch::Tensor> ds_transformer_backward(int layer_id,
                                                    const torch::Tensor& grad_output,
                                                    const torch::Tensor& output,
                                                    const torch::Tensor& inp_norm,
@@ -881,12 +879,12 @@ std::vector<torch::Tensor> ds_transformer_backward(unsigned layer_id,
     CHECK_INPUT(norm_w);
     CHECK_INPUT(norm_b);
 
-    unsigned bsz = g_output.size(0);
+    int bsz = g_output.size(0);
 
     std::shared_ptr<BertTransformerLayer<T>> layer =
         std::static_pointer_cast<BertTransformerLayer<T>>(s_transformer_layers[layer_id]);
 
-    unsigned seq_len = layer->GetSeqLength();
+    int seq_len = layer->GetSeqLength();
     if (g_output.size(1) != seq_len) {
         seq_len = g_output.size(1);
         layer->SetSeqLength(seq_len);

@@ -4,7 +4,7 @@ title: "DeepSpeed Configuration JSON"
 
 ### Batch Size Related Parameters
 
-**Note:** <i>**train_batch_size**</i> must be equal to  <i>**train_micro_batch_size_per_gpu**</i> * <i>**gradient_accumulation**</i> * number of GPUs. For simplicity, you can choose to only specify two of the three parameters, the last one will be inferred automatically by DeepSpeed.
+**Note:** <i>**train_batch_size**</i> must be equal to  <i>**train_micro_batch_size_per_gpu**</i> * <i>**gradient_accumulation**</i> * number of GPUs. For simplicty, you can choose to only specify two of the three parameters, the last one will be inferred automatically by DeepSpeed.
 {: .notice--warning}
 
 <i>**train_batch_size**</i>: [integer]
@@ -88,33 +88,6 @@ The 1-bit Adam optimizer supports the following three params keys/values in addi
 | cuda\_aware         | To indicate that the underlying MPI library supports CUDA-Aware communication      | false   |
 | comm\_backend\_name | To indicate which backend implementation to use                                    | "nccl"  |
 
-A variant ***optimizer*** for 1-bit Adam is 0/1 Adam, which further optimizes 1-bit Adam via adaptive variance freezing and 1-bit synchronization over optimizer states.
-```json
-"optimizer": {
-    "type": "ZeroOneAdam",
-    "params": {
-      "lr": 1e-3,
-      "weight_decay": 0.01,
-      "bias_correction": false,
-      "var_freeze_step": 1000,
-      "var_update_scaler": 16,
-      "local_step_scaler": 1000,
-      "local_step_clipper": 16,
-      "cuda_aware": false,
-      "comm_backend_name": "nccl"
-    }
-  }
-```
-0/1 Adam supports  the following params key/values in addition to standard Adam (learn more in our [tutorial](/tutorial/zero-one-adam/).)
-| "params" key        | Description                                                                        | Default |
-| ------------------- | ---------------------------------------------------------------------------------- | ------- |
-| var\_freeze\_step   | The latest step to update the variance                                             | 100000  |
-| var\_update\_scaler | The interval to update the variance                                                | 16  |
-| local\_step\_scaler | The interval to scale the local steps interval according to the learning rate policy   | 32678  |
-| local\_step\_clipper | The largest interval for local steps with learning rate policy                     | 16  |
-| cuda\_aware         | To indicate that the underlying MPI library supports CUDA-Aware communication      | false   |
-| comm\_backend\_name | To indicate which backend implementation to use                                    | "nccl"  |
-
 Another example of ***optimizer*** with 1-bit LAMB
 
 ```json
@@ -178,11 +151,11 @@ Example of <i>**scheduler**</i>
 
 ### Communication options
 
-<i>**communication_data_type**</i>: [boolean]
+<i>**fp32_allreduce**</i>: [boolean]
 
-| Description                                                                                                                   | Default |
-| ----------------------------------------------------------------------------------------------------------------------------- | ------- |
-| During gradient averaging perform communication with selected data type. By default it will be determined by selected regime  |  None   |
+| Description                                                    | Default |
+| -------------------------------------------------------------- | ------- |
+| During gradient averaging perform allreduce with 32 bit values | `false` |
 
 <i>**prescale_gradients**</i>: [boolean]
 
@@ -198,9 +171,9 @@ Example of <i>**scheduler**</i>
 
 <i>**sparse_gradients**</i>: [boolean]
 
-| Description                                                                                                                                                                                                                                                                                                                                                 | Default |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| Enable sparse compression of [torch.nn.Embedding](https://pytorch.org/docs/stable/nn.html#torch.nn.Embedding) gradients. This feature is essentially deprecated as we don't see use cases for it as much anymore. It should be noted that this feature is not compatible with [torch.sparse](https://pytorch.org/docs/stable/sparse.html) related features. | `false` |
+| Description                                                                                                              | Default |
+| ------------------------------------------------------------------------------------------------------------------------ | ------- |
+| Enable sparse compression of [torch.nn.Embedding](https://pytorch.org/docs/stable/nn.html#torch.nn.Embedding) gradients. | `false` |
 
 ### FP16 training options
 
@@ -259,33 +232,6 @@ Example of <i>**scheduler**</i>
 | Description                                                                                           | Default |
 | ----------------------------------------------------------------------------------------------------- | ------- |
 | <i>**min_loss_scale**</i> is  a **fp16** parameter representing the minimum dynamic loss scale value. | `1000`  |
-
-### BFLOAT16 training options
-
-**Note:** this mode cannot be combined with the `amp` mode described below.
-{: .notice--warning}
-
-**Note:** this mode cannot be combined with the `fp16` mode described above.
-{: .notice--warning}
-
-<i>**bf16**</i>: [dictionary]
-
-| Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Default |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| Configuration for using [bfloat16](https://en.wikipedia.org/wiki/Bfloat16_floating-point_format) floating-point format as an alternative to FP16. BFLOAT16 requires hardware support (e.g., NVIDIA A100). An example, including the available dictionary keys is illustrated below. Training with bfloat16 does not require loss scaling. | None    |
-
-```json
-"bf16": {
-   "enabled": true
- }
-```
-
-<i>**bf16:enabled**</i>: [boolean]
-
-| Description                                                        | Default |
-|--------------------------------------------------------------------| ------- |
-| <i>**enabled**</i> indicates whether BFLOAT16 training is enabled. | `false` |
-
 
 ### Automatic mixed precision (AMP) training options
 
@@ -353,9 +299,8 @@ Enabling and configuring ZeRO memory optimizations
     "stage3_param_persistence_threshold" : 1e6,
     "sub_group_size" : 1e12,
     "elastic_checkpoint" : [true|false],
-    "stage3_gather_16bit_weights_on_model_save": [true|false],
+    "stage3_gather_fp16_weights_on_model_save": [true|false],
     "ignore_unused_parameters": [true|false]
-    "round_robin_gradients": [true|false]
     }
 ```
 
@@ -403,21 +348,15 @@ Enabling and configuring ZeRO memory optimizations
 
 <i>**contiguous_gradients**</i>: [boolean]
 
-| Description                                                                                                         | Default |
-| ------------------------------------------------------------------------------------------------------------------- | ------- |
-| Copies the gradients to a contiguous buffer as they are produced. Avoids memory fragmentation during backward pass. | `True`  |
+| Description                                                                                                                                                     | Default |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| Copies the gradients to a contiguous buffer as they are produced. Avoids memory fragmentation during backward pass. | `True` |
 
 <i>**grad_hooks**</i>: [boolean]
 
-| Description                                                                                                                               | Default |
-| ----------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| For use with ZeRO stage 1, enable backward hooks to reduce gradients during the backward pass or wait until the end of the backward pass. | `True`  |
-
-***round_robin_gradients***: [boolean]
-
-| Description                                                                                                                                                                                                                                                                         | Default |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| Stage 2 optimization for CPU offloading that parallelizes gradient copying to CPU memory among ranks by fine-grained gradient partitioning. Performance benefit grows with gradient accumulation steps (more copying between optimizer steps) or GPU count (increased parallelism). | `False` |
+| Description                                                                                                                                | Default |
+| ------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
+| For use with ZeRO stage 1, enable backward hooks to reduce gradients during the backward pass or wait until the end of the backward pass.  | `True`  |
 
 ***offload_param***: [dictionary]
 
@@ -427,8 +366,8 @@ Enabling and configuring ZeRO memory optimizations
 
 ***offload_optimizer***: [dictionary]
 
-| Description                                                                                                                                                                                                                          | Default |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
+| Description                                                                                                                                                                                                                    | Default |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
 | Enable offloading of optimizer state to CPU or NVMe, and optimizer computation to CPU. This frees up GPU memory for larger models or batch sizes. Valid only with stage 2 and 3. See [here](#optimizer-offloading) for more details. | `False` |
 
 ***stage3_max_live_parameters***: [integer]
@@ -457,11 +396,11 @@ Enabling and configuring ZeRO memory optimizations
 | Do not partition parameters smaller than this threshold. Smaller values use less memory, but can greatly increase communication (especially latency-bound messages). | `1e6`   |
 
 
-***stage3_gather_16bit_weights_on_model_save***: [boolean]
+***stage3_gather_fp16_weights_on_model_save***: [boolean]
 
-| Description                                                                                                                                                                                                                                                                    | Default |
-|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------| ------- |
-| Consolidate the weights before saving the model by `save_16bit_model()`. Since the weights are partitioned across GPUs, they aren't part of `state_dict`, so this function automatically gathers the weights when this option is enabled and then saves the fp16 model weights. | `False` |
+| Description                                                                                                                                                                                                                                                                   | Default |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| Consolidate the weights before saving the model by `save_fp16_model()`. Since the weights are partitioned across GPUs, they aren't part of `state_dict`, so this function automatically gather the weights when this option is enabled and then saves the fp16 model weights. | `False` |
 
 
 ***cpu_offload***: [boolean]
@@ -476,11 +415,9 @@ Enabling and configuring ZeRO memory optimizations
 
 ### Parameter offloading
 Enabling and configuring ZeRO optimization of parameter offloading to CPU/NVMe. Available only with ZeRO stage 3.
-Note that if the value of "device" is not specified or not supported, an assertion will be triggered.
-
 ```json
   "offload_param": {
-    "device": "[cpu|nvme]",
+    "device": "[none|cpu|nvme]",
     "nvme_path": "/local_nvme",
     "pin_memory": [true|false],
     "buffer_count": 5,
@@ -527,10 +464,9 @@ Note that if the value of "device" is not specified or not supported, an asserti
 
 ### Optimizer offloading
 Enabling and configuring ZeRO optimization of offloading optimizer computation to CPU and state to CPU/NVMe. CPU offloading is available with ZeRO stage 2 or 3. NVMe offloading is available only with ZeRO stage 3.
-Note that if the value of "device" is not specified or not supported, an assertion will be triggered.
 ```json
   "offload_optimizer": {
-    "device": "[cpu|nvme]",
+    "device": "[none|cpu|nvme]",
     "nvme_path": "/local_nvme",
     "pin_memory": [true|false],
     "buffer_count": 4,
@@ -611,17 +547,17 @@ Configuring the asynchronous I/O module for offloading parameter and optimizer s
 
 ***ignore_unused_parameters***: [boolean]
 
-| Description                                                                                                                                                                                                                                                                                                                                                     | Default |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| Unused parameters in modules may be unexpected in static networks, but could be normal in dynamic networks. This controls whether or not training should terminate with an error message when unused parameters are detected. This is set to `False` by default, which means unused parameters are ignored and training continues. Now is just used in stage 2. | `True`  |
+| Description                                                                                                                            | Default |
+| -------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| Unused parameters in modules may be unexpected in static networks, but could be normal in dynamic networks. This controls whether or not training should terminate with an error message when unused parameters are detected. This is set to `False` by default, which means unused parameters are ignored and training continues. Now is just used in stage 2. | `True` |
 
 ### Logging
 
 <i>**steps_per_print**</i>: [integer]
 
-| Description                                                                                                                                                                                                                             | Default |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| Print progress report every N training steps. The report includes the number of training steps, number of skipped optimizer updates (likely due to overflows in mixed-precision training), current learning rate, and current momentum. | `10`    |
+| Description                    | Default |
+| ------------------------------ | ------- |
+| Print progress report every N training steps. The report includes the number of training steps, number of skipped optimizer updates (likely due to overflows in mixed-precision training), current learning rate, and current momentum.  | `10`    |
 
 <i>**wall_clock_breakdown**</i>: [boolean]
 
@@ -634,120 +570,6 @@ Configuring the asynchronous I/O module for offloading parameter and optimizer s
 | Description                                                          | Default |
 | -------------------------------------------------------------------- | ------- |
 | Print out state information of DeepSpeed object after initialization | `false` |
-
-
-### Autotuning
-
-```json
-{
-  "autotuning": {
-    "enabled": false,
-    "results_dir": null,
-    "exps_dir": null,
-    "overwrite": false,
-    "metric": "throughput",
-    "start_profile_step": 3,
-    "end_profile_step": 5,
-    "fast": true,
-    "max_train_batch_size": null,
-    "mp_size": 1,
-    "num_tuning_micro_batch_sizes": 3,
-    "tuner_type": "model_based",
-    "tuner_early_stopping": 5,
-    "tuner_num_trials": 50,
-    "arg_mappings": null
-  }
-}
-```
-<i>**enabled**</i>: [boolean]
-
-| Description            | Default |
-| ---------------------- | ------- |
-| Enables the autotuner. | `false` |
-
-
-<i>**results_dir**</i>: [string]
-
-| Description                                                                                                                      | Default |
-| -------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| Path to the autotuning experiment results directory. If None, "autotuning_results" under the training script launching path is used. | `null`  |
-
-<i>**exps_dir**</i>: [string]
-
-| Description                                                                                                                        | Default |
-| ---------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| Path to the auotuning experiment descriptions directory. If None, "autotuning_exps" under the train script launching path is used. | `null`  |
-
-<i>**overwrite**</i>: [boolean]
-
-| Description                                                                                                               | Default |
-|---------------------------------------------------------------------------------------------------------------------------| ------- |
-| Whether to run autotuing experiments whose results already exist. Setting it to true would overwrite the existing result. | `false` |
-
-
-<i>**metric**</i>: [string]
-
-| Description                                                                                                                                                                                                                                                            | Default      |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
-| The performance metric to use for ranking autotuning experiments. `latency`, `throughput`, and `FLOPS` are currently supported, referring to training step latency, training samples per second, and floating-point operations per second achieved per GPU respectively. | `throughput` |
-
-<i>**start_profile_step**</i>: [integer]
-
-| Description                                                                                                                                         | Default |
-| --------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| The global training step at which to start profiling in an autotuning experiment. Note that warm-up is needed for accurate performance measurement. | `3`     |
-
-<i>**end_profile_step**</i>: [integer]
-
-| Description                                                                                                               | Default |
-| ------------------------------------------------------------------------------------------------------------------------- | ------- |
-| The global training step at which to end profiling in an autotuning experiment. Must not be less than start_profile_step. | `5`     |
-
-
-<i>**fast**</i>: [boolean]
-
-| Description                                                                                  | Default |
-| -------------------------------------------------------------------------------------------- | ------- |
-| Enables fast-model autotuning where only Zero stages and micro-batch sizes per GPU are tuned. | `true` |
-
-<i>**max_train_batch_size**</i>: [int]
-
-| Description                                                                       | Default |
-| --------------------------------------------------------------------------------- | ------- |
-| The maximum train batch size (global effective batch size) for the model training. | `null`  |
-
-<i>**mp_size**</i>: [int]
-
-| Description              | Default |
-| ------------------------ | ------- |
-| Model parallelism degree. | `1`     |
-
-
-<i>**num_tuning_micro_batch_sizes**</i>: [integer]
-
-| Description                                     | Default |
-| ----------------------------------------------- | ------- |
-| The number of micro-batch sizes to explore. | `3`     |
-
-<i>**tuner_type**</i>: [string]
-
-| Description                                                                              | Default       |
-| ---------------------------------------------------------------------------------------- | ------------- |
-| The algorithm defines the order of autotuning space exploration within a ZeRO stage. | `model_based` |
-
-
-<i>**tuner_early_stopping**</i>: [integer]
-
-| Description                                                                                                                                                | Default |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| The number of experiments to run beyond the current best experiment. If no better experiment is found within that number, the Autotuner stops the exploration. | `5`     |
-
-<i>**tuner_num_trials**</i>: [integer]
-
-| Description                                                                           | Default |
-| ------------------------------------------------------------------------------------- | ------- |
-| The maximum number of experiments to explore in the tuning space within a ZeRO stage. | `50`    |
-
 
 ### Flops Profiler
 ```json
@@ -833,7 +655,7 @@ Configuring the asynchronous I/O module for offloading parameter and optimizer s
 
 | Description                                                                                              | Default |
 | -------------------------------------------------------------------------------------------------------- | ------- |
-| Total number of activation checkpoints used to allocate memory buffer for contiguous_memory_optimization | `None`  |
+| Total number of activation checkpoints used to allocate memory buffer for contiguous_memoty_optimization | `None`  |
 
 <i>**synchronize_checkpoint_boundary**</i>: [boolean]
 
@@ -886,119 +708,4 @@ Configuring the asynchronous I/O module for offloading parameter and optimizer s
     "global_block_end_indices": None,
     "num_sliding_window_blocks": 3
   }
-```
-
-### Curriculum Learning
-```json
-  "curriculum_learning": {
-    "enabled": true,
-    "curriculum_type": "seqlen",
-    "min_difficulty": 8,
-    "max_difficulty": 1024,
-    "schedule_type": "fixed_linear",
-    "schedule_config": {
-      "total_curriculum_step": 40000,
-      "difficulty_step": 8
-    }
-  }
-```
-<i>**enabled**</i>: [boolean]
-
-| Description                               | Default |
-| ----------------------------------------- | ------- |
-| Set to true to enable curriculum learning | `false` |
-
-<i>**curriculum_type**</i>: [string]
-
-| Description                                                       | Default |
-| ----------------------------------------------------------------- | ------- |
-| Type of curriculum difficulty metric. Currently support `seqlen`. | N/A     |
-
-
-<i>**min_difficulty**</i>: [integer]
-
-| Description                   | Default |
-| ----------------------------- | ------- |
-| The starting difficulty level | N/A     |
-
-<i>**max_difficulty**</i>: [integer]
-
-| Description                 | Default |
-| --------------------------- | ------- |
-| The ending difficulty level | N/A     |
-
-<i>**schedule_type**</i>: [string]
-
-| Description                                                                                        | Default |
-| -------------------------------------------------------------------------------------------------- | ------- |
-| Type of curriculum schedule. Currently support `fixed_linear`, `fixed_root`, and `fixed_discrete`. | N/A     |
-
-
-<i>**total_curriculum_step**</i>: [integer]
-
-| Description                                                                                                                                      | Default |
-| ------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
-| Total number of steps for the curriculum learning. One of the `schedule_config` when the `fixed_linear` and `fixed_root` schedule_type are used. | N/A     |
-
-<i>**difficulty_step**</i>: [integer]
-
-| Description                                                                                                                                                                                                                                                                                          | Default |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| At any time, the curriculum learning difficulty must be multiple of this `difficulty_step`. Set this to multiple of 8 (for FP16 data) or 16 (for INT8 data) to enable NVIDIA Tensor Core acceleration. One of the `schedule_config` when the `fixed_linear` and `fixed_root` schedule_type are used. | N/A     |
-
-<i>**root_degree**</i>: [integer]
-
-| Description                                                                                                                | Default |
-| -------------------------------------------------------------------------------------------------------------------------- | ------- |
-| Root degree of the curriculum schedule function. One of the `schedule_config` when the `fixed_root` schedule_type is used. | N/A     |
-
-<i>**difficulty**</i>: [list of integer]
-
-| Description                                                                                                                         | Default |
-| ----------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| List of difficulty levels to be used during schedule. One of the `schedule_config` when the `fixed_discrete` schedule_type is used. | N/A     |
-
-<i>**max_step**</i>: [list of integer]
-
-| Description                                                                                                                  | Default |
-| ---------------------------------------------------------------------------------------------------------------------------- | ------- |
-| List of which step to change difficulty level. One of the `schedule_config` when the `fixed_discrete` schedule_type is used. | N/A     |
-
-### Logging to Tensorboard
-
-**Note:** Deepspeed logs to TensorBoard through PyTorch. Logging to TensorBoard requires that the `tensorboard` package is installed (read more in the [PyTorch documentation](https://pytorch.org/docs/1.8.0/tensorboard.html)).
-{: .notice--warning}
-
-
-Deepspeed can log training details into a [Tensorboard](https://www.tensorflow.org/tensorboard)-compatible file. Below is an overview of what deepspeed will log.
-
-| Field | Description                                                                                                                                                                                                                                                                                               |Conditions |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----- |
-| `Train/Samples/train_loss`   | The training loss. | None |
-| `Train/Samples/lr`           | The learning rate during training. | None |
-| `Train/Samples/loss_scale`   | The loss scale when training using `fp16`. | `fp16` must be enabled. |
-| `Train/Eigenvalues/ModelBlockParam_{i}`   | Eigen values per param block. | `eigenvalue` must be enabled. |
-| `Train/Samples/elapsed_time_ms_forward`   | The global duration of the forward pass. | `flops_profiler.enabled` or `wall_clock_breakdown`. |
-| `Train/Samples/elapsed_time_ms_backward`   | The global duration of the forward pass. | `flops_profiler.enabled` or `wall_clock_breakdown`.  |
-| `Train/Samples/elapsed_time_ms_backward_inner`   | The backward time that does not include the the gradient reduction time. Only in cases where the gradient reduction is not overlapped, if it is overlapped then the inner time should be about the same as the entire backward time. | `flops_profiler.enabled` or `wall_clock_breakdown`.  |
-| `Train/Samples/elapsed_time_ms_backward_allreduce`   | The global duration of the allreduce operation. | `flops_profiler.enabled` or `wall_clock_breakdown`.  |
-| `Train/Samples/elapsed_time_ms_step`   | The optimizer step time | `flops_profiler.enabled` or `wall_clock_breakdown`.  |
-
-<i>**tensorboard**</i>: [dictionary]
-
-| Fields | Value                                                                                                                                                                                                                                                                                                        |Default |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----- |
-| enabled   | Whether logging to [Tensorboard](https://www.tensorflow.org/tensorboard) is enabled. | `false` |
-| job_name  | Name for the current job. This will become a new directory inside `output_path` | `"DeepSpeedJobName"` |
-| output_path | Path to where the Tensorboard logs will be written.                           | `~/tensorboard/` |
-
-
-Example of <i>** tensorboard**</i> configuration:
-
-```json
-"tensorboard": {
-    "enabled": true,
-    "output_path": "output/ds_logs/",
-    "job_name": "train_bert"
-}
 ```

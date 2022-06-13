@@ -1,13 +1,20 @@
+import argparse
 import numpy as np
 import torch
 import torch.nn.functional as F
 import pytest
+import json
 import random
+import time
 import copy
 from torch import nn
+from modelingpreln import BertEncoder as BertEncoderPreln
+from modeling import BertEncoder as BertEncoderPostln
+from modeling import BertConfig, BertLayerNorm
 from deepspeed import DeepSpeedTransformerLayer, DeepSpeedTransformerConfig
-from .modeling import BertConfig, BertLayerNorm, BertEncoder as BertEncoderPostln
-from .modelingpreln import BertEncoder as BertEncoderPreln
+import deepspeed
+
+import sys
 
 #if not deepspeed.ops.__installed_ops__['transformer']:
 #pytest.skip(
@@ -43,37 +50,27 @@ def check_equal(first, second, atol=1e-2, verbose=False):
             print("checking ", x[1], ":")
         y = diction_y[x[0], x[1]]
         x = diction_x[x[0], x[1]]
-
-        if verbose:
-            print(((x == float('inf')).nonzero(as_tuple=True)[0]))
-            print(((y == float('inf')).nonzero(as_tuple=True)[0]))
         x = x.cpu().detach().numpy()
         y = y.cpu().detach().numpy()
+        if verbose:
+            print(x)
+            print(y)
 
         avgx = np.sum(abs(x), dtype=float)
         countx = x.shape[0]
         for i in range(len(x.shape) - 1):
             countx *= x.shape[i + 1]
             avgx = np.sum(avgx)
-        tolerance = 1
+        tollerance = 1
         if avgx != float('inf') and avgx != -float('inf'):
             avgx = avgx / countx
-            tolerance = avgx * atol
+            tollerance = avgx * atol
         if verbose:
-            print("tolerance is ", tolerance)
-            x = x.flatten()
-            y = y.flatten()
-            print("x = {}".format(x))
-            print("y = {}".format(y))
-            if any(x == float('inf')) or any(x == -float('inf')):
-                print("found infinity in x")
-            if any(y == float('inf')) or any(y == -float('inf')):
-                print("found infinity in y")
-            print(np.linalg.norm(x.astype('float64')))
-            print(np.linalg.norm(y.astype('float64')))
+            print("tollerance is ", tollerance)
+            print("x = {}".format(x.flatten()))
+            print("y = {}".format(y.flatten()))
             print('-' * 80)
-        #toler = np.linalg.norm(x.astype('float64')) * 0.0005
-        np.testing.assert_allclose(x, y, err_msg="Index: {}".format(i), atol=tolerance)
+        np.testing.assert_allclose(x, y, err_msg="Index: {}".format(i), atol=tollerance)
 
 
 def zero_grad(variables):
@@ -238,7 +235,7 @@ def run_backward(ds_config, seq_len, atol=1e-2, verbose=False):
                                 output_all_encoded_layers=False,
                                 checkpoint_activations=False)
 
-    loss = (Y - base_results[0]).pow(2).sum() / 64
+    loss = (Y - base_results[0]).pow(2).sum()
     loss.backward()
     base_grads = bert_encoder.get_grads()
 
@@ -248,7 +245,7 @@ def run_backward(ds_config, seq_len, atol=1e-2, verbose=False):
                             output_all_encoded_layers=False,
                             checkpoint_activations=False)
 
-    loss = (Y - ds_results[0]).pow(2).sum() / 64
+    loss = (Y - ds_results[0]).pow(2).sum()
     loss.backward()
     ds_grads = ds_encoder.get_grads()
 
@@ -261,13 +258,11 @@ def run_backward(ds_config, seq_len, atol=1e-2, verbose=False):
 # 3-128-54-2-24-False-True-0.2
 @pytest.mark.parametrize('batch_size, hidden_size, seq_len, heads, num_layers, is_preln, use_fp16, atol',
                          [
-                             (64,160,128,2,24,False,True, 0.2),
-                             (64,1600,128,2,4,False,True, 0.2),
                              (8,1600,128,25,3,True,True, 0.05),
                              (8,160,128,2,3,True,True, 0.1),
                              (8,1600,128,2,3,True,True, 0.05),
-                             #(3,1024,119,16,24,True,False, 0.05),
-                             #(3,1024,115,16,24,True,True, 0.05),
+                             (3,1024,119,16,24,True,False, 0.05),
+                             (3,1024,115,16,24,True,True, 0.05),
                              #(1024,128,10,2,2,False,False, 0.1),
                              #(3,1024,52,16,24,False,True, 0.2),
                              #(3,128,51,2,24,False,False, 0.1),
@@ -299,7 +294,7 @@ def test_backward(batch_size,
     ds_config.initializer_range = 0.02
     ds_config.fp16 = use_fp16
 
-    run_backward(ds_config, seq_len, atol=atol, verbose=True)
+    run_backward(ds_config, seq_len, atol=atol, verbose=False)
 
 
 #@pytest.mark.parametrize('batch_size, hidden_size, seq_len, heads, num_layers, is_preln, use_fp16, atol',

@@ -36,10 +36,9 @@ class DeepSpeedZeroConfig(DeepSpeedConfigObject):
         self.param_persistence_threshold = None
         self.max_live_parameters = None
         self.max_reuse_distance = None
-        self.gather_16bit_weights_on_model_save = None
+        self.gather_fp16_weights_on_model_save = None
 
         self.ignore_unused_parameters = None
-        self.round_robin_gradients = None
 
         if ZERO_OPTIMIZATION in param_dict.keys():
             zero_config_dict = param_dict[ZERO_OPTIMIZATION]
@@ -104,8 +103,9 @@ class DeepSpeedZeroConfig(DeepSpeedConfigObject):
         self.overlap_comm = get_scalar_param(
             zero_config_dict,
             ZERO_OPTIMIZATION_OVERLAP_COMM,
-            ZERO3_OPTIMIZATION_OVERLAP_COMM_DEFAULT if self.stage
-            == ZERO_OPTIMIZATION_WEIGHTS else ZERO_OPTIMIZATION_OVERLAP_COMM_DEFAULT)
+            ZERO3_OPTIMIZATION_OVERLAP_COMM_DEFAULT
+            if self.stage == ZERO_OPTIMIZATION_WEIGHTS else
+            ZERO_OPTIMIZATION_OVERLAP_COMM_DEFAULT)
 
         self.allgather_partitions = get_scalar_param(
             zero_config_dict,
@@ -171,16 +171,10 @@ class DeepSpeedZeroConfig(DeepSpeedConfigObject):
             ZERO_OPTIMIZATION_PARAM_PERSISTENCE_THRESHOLD,
             ZERO_OPTIMIZATION_PARAM_PERSISTENCE_THRESHOLD_DEFAULT)
 
-        # config key has been renamed to use "16bit" instead of "fp16." falling back
-        # to old config name in order to preserve backwards compatibility
-        self.gather_16bit_weights_on_model_save = ZERO_OPTIMIZATION_GATHER_16BIT_WEIGHTS_ON_MODEL_SAVE_DEFAULT
-        for key in [
-                ZERO_OPTIMIZATION_GATHER_16BIT_WEIGHTS_ON_MODEL_SAVE,
-                ZERO_OPTIMIZATION_GATHER_FP16_WEIGHTS_ON_MODEL_SAVE
-        ]:
-            if key in zero_config_dict:
-                self.gather_16bit_weights_on_model_save = zero_config_dict[key]
-                break
+        self.gather_fp16_weights_on_model_save = get_scalar_param(
+            zero_config_dict,
+            ZERO_OPTIMIZATION_GATHER_FP16_WEIGHTS_ON_MODEL_SAVE,
+            ZERO_OPTIMIZATION_GATHER_FP16_WEIGHTS_ON_MODEL_SAVE_DEFAULT)
 
         self.ignore_unused_parameters = get_scalar_param(
             zero_config_dict,
@@ -190,8 +184,3 @@ class DeepSpeedZeroConfig(DeepSpeedConfigObject):
         self.legacy_stage1 = get_scalar_param(zero_config_dict,
                                               ZERO_OPTIMIZATION_LEGACY_STAGE1,
                                               ZERO_OPTIMIZATION_LEGACY_STAGE1_DEFAULT)
-
-        self.round_robin_gradients = get_scalar_param(
-            zero_config_dict,
-            ZERO_OPTIMIZATION_ROUND_ROBIN_GRADIENTS,
-            ZERO_OPTIMIZATION_ROUND_ROBIN_GRADIENTS_DEFAULT)

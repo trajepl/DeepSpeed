@@ -9,7 +9,7 @@ function prep_folder()
     fi
 }
 
-function validate_environment()
+function validate_enviroment()
 {
     validate_cmd="python ./validate_async_io.py"
     eval ${validate_cmd}
@@ -23,7 +23,7 @@ function validate_environment()
 
 
 
-validate_environment
+validate_enviroment
 
 if [[ $# -ne 3 ]]; then
     echo "Usage: $0 <write size in MB> <write dir ><output log dir>"

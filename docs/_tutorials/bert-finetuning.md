@@ -1,7 +1,6 @@
 ---
 title: "BingBertSQuAD Fine-tuning"
 excerpt: ""
-tags: training fine-tuning
 ---
 
 In this tutorial we will be adding DeepSpeed to the BingBert model for the SQuAD fine-tuning task, called "BingBertSquad" henceforth. We will also demonstrate performance gains.

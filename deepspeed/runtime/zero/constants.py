@@ -30,8 +30,7 @@ ZeRO optimization should be enabled as:
     "sub_group_size" : 1000000000000,
     "offload_param": {...},
     "offload_optimizer": {...},
-    "ignore_unused_parameters": [true|false],
-    "round_robin_gradients": [true|false]
+    "ignore_unused_parameters": [true|false]
     }
 }
 '''
@@ -74,7 +73,7 @@ ZERO_OPTIMIZATION_LOAD_FROM_FP32_WEIGHTS = 'load_from_fp32_weights'
 ZERO_OPTIMIZATION_LOAD_FROM_FP32_WEIGHTS_DEFAULT = True
 
 ZERO_OPTIMIZATION_ELASTIC_CHECKPOINT = 'elastic_checkpoint'
-ZERO_OPTIMIZATION_ELASTIC_CHECKPOINT_DEFAULT = False
+ZERO_OPTIMIZATION_ELASTIC_CHECKPOINT_DEFAULT = True
 
 ZERO_OPTIMIZATION_CPU_OFFLOAD = 'cpu_offload'
 ZERO_OPTIMIZATION_CPU_OFFLOAD_DEFAULT = False
@@ -106,15 +105,14 @@ ZERO_OPTIMIZATION_PREFETCH_BUCKET_SIZE = 'stage3_prefetch_bucket_size'
 ZERO_OPTIMIZATION_PREFETCH_BUCKET_SIZE_DEFAULT = 50000000
 
 #parameters smaller than the threshold are only communicated once after the
-#parameters are updated and are persisted throughout the training
+#parameters are updated and are persisted thoughout the trainging
 #avoid tons of latency bound communication
 ZERO_OPTIMIZATION_PARAM_PERSISTENCE_THRESHOLD = 'stage3_param_persistence_threshold'
 ZERO_OPTIMIZATION_PARAM_PERSISTENCE_THRESHOLD_DEFAULT = 100000
 
 # gathers params for saving a model - inefficient but is required in certain situations
 ZERO_OPTIMIZATION_GATHER_FP16_WEIGHTS_ON_MODEL_SAVE = 'stage3_gather_fp16_weights_on_model_save'
-ZERO_OPTIMIZATION_GATHER_16BIT_WEIGHTS_ON_MODEL_SAVE = 'stage3_gather_16bit_weights_on_model_save'
-ZERO_OPTIMIZATION_GATHER_16BIT_WEIGHTS_ON_MODEL_SAVE_DEFAULT = False
+ZERO_OPTIMIZATION_GATHER_FP16_WEIGHTS_ON_MODEL_SAVE_DEFAULT = False
 
 # Now just used in stage2 complete_grad_norm_calculation_for_cpu_offload
 # Enable this option to avoid:
@@ -122,13 +120,9 @@ ZERO_OPTIMIZATION_GATHER_16BIT_WEIGHTS_ON_MODEL_SAVE_DEFAULT = False
 ZERO_OPTIMIZATION_IGNORE_UNUSED_PARAMETERS = 'ignore_unused_parameters'
 ZERO_OPTIMIZATION_IGNORE_UNUSED_PARAMETERS_DEFAULT = True
 
-# Use deepspeed < v0.3.17 zero stage 1, kept for backwards compatibility reasons
+# Use deepspeed < v0.3.17 zero stage 1, kept for backwards compatability reasons
 ZERO_OPTIMIZATION_LEGACY_STAGE1 = "legacy_stage1"
 ZERO_OPTIMIZATION_LEGACY_STAGE1_DEFAULT = False
-
-# Stage 2 - partition gradients in a round robin fashion to load-balance reduction and offload copying
-ZERO_OPTIMIZATION_ROUND_ROBIN_GRADIENTS = 'round_robin_gradients'
-ZERO_OPTIMIZATION_ROUND_ROBIN_GRADIENTS_DEFAULT = False
 
 #yapf: disable
 ZERO_OPTIMIZATION_DEFAULT = {
@@ -162,12 +156,10 @@ ZERO_OPTIMIZATION_DEFAULT = {
     ZERO_OPTIMIZATION_PREFETCH_BUCKET_SIZE_DEFAULT,
     ZERO_OPTIMIZATION_PARAM_PERSISTENCE_THRESHOLD:
     ZERO_OPTIMIZATION_PARAM_PERSISTENCE_THRESHOLD_DEFAULT,
-    ZERO_OPTIMIZATION_GATHER_16BIT_WEIGHTS_ON_MODEL_SAVE:
-    ZERO_OPTIMIZATION_GATHER_16BIT_WEIGHTS_ON_MODEL_SAVE_DEFAULT,
+    ZERO_OPTIMIZATION_GATHER_FP16_WEIGHTS_ON_MODEL_SAVE:
+    ZERO_OPTIMIZATION_GATHER_FP16_WEIGHTS_ON_MODEL_SAVE_DEFAULT,
     ZERO_OPTIMIZATION_IGNORE_UNUSED_PARAMETERS:
     ZERO_OPTIMIZATION_IGNORE_UNUSED_PARAMETERS_DEFAULT,
     ZERO_OPTIMIZATION_LEGACY_STAGE1:
-    ZERO_OPTIMIZATION_LEGACY_STAGE1_DEFAULT,
-    ZERO_OPTIMIZATION_ROUND_ROBIN_GRADIENTS:
-    ZERO_OPTIMIZATION_ROUND_ROBIN_GRADIENTS_DEFAULT
+    ZERO_OPTIMIZATION_LEGACY_STAGE1_DEFAULT
 }

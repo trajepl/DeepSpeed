@@ -116,6 +116,7 @@ class WeightQuantization(object):
         return sd, all_scales
 
     def model_quantize(self, model, quantize_policy, quantize_bits, groups):
+
         all_scales = []
 
         def quantize_fn(layer, policy_cls):

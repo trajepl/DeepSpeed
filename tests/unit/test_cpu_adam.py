@@ -20,7 +20,7 @@ def check_equal(first, second, atol=1e-2, verbose=False):
         print("x = {}".format(x.flatten()))
         print("y = {}".format(y.flatten()))
         print('-' * 80)
-    np.testing.assert_allclose(x, y, err_msg="param-update mismatch!", atol=atol)
+    np.testing.assert_allclose(x, y, err_msg="param-update dismatch!", atol=atol)
 
 @pytest.mark.parametrize('model_size',
                          [
@@ -60,15 +60,3 @@ def test_cpu_adam_opt(model_size):
 
     check_equal(param, param1, atol=1e-2, verbose=True)
     check_equal(param, param2.cpu(), atol=1e-2, verbose=True)
-
-
-def test_cpu_adam_gpu_error():
-    model_size = 64
-    from deepspeed.ops.adam import DeepSpeedCPUAdam
-    device = 'cuda:0'
-    param = torch.nn.Parameter(torch.randn(model_size, device=device))
-    optimizer = DeepSpeedCPUAdam([param])
-
-    param.grad = torch.randn(model_size, device=device)
-    with pytest.raises(AssertionError):
-        optimizer.step()

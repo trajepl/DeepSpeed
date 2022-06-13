@@ -1,7 +1,7 @@
 import torch
 import torch.distributed as dist
 
-from .common import distributed_test
+from common import distributed_test
 
 import pytest
 
@@ -13,7 +13,7 @@ def test_init():
     assert dist.get_rank() < 3
 
 
-# Demonstration of pytest's parameterization
+# Demonstration of pytest's paramaterization
 @pytest.mark.parametrize('number,color', [(1138, 'purple')])
 def test_dist_args(number, color):
     """Outer test function with inputs from pytest.mark.parametrize(). Uses a distributed

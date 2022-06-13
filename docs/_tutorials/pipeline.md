@@ -1,6 +1,5 @@
 ---
 title: "Pipeline Parallelism"
-tags: training large-model
 ---
 
 DeepSpeed v0.3 includes new support for pipeline parallelism! Pipeline

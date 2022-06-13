@@ -12,8 +12,6 @@ Model Specification
 .. autoclass:: deepspeed.pipe.TiedLayerSpec
     :members:
 
-.. autoclass:: deepspeed.runtime.pipe.ProcessTopology
-    :members:
 
 Training
 --------

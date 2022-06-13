@@ -8,59 +8,9 @@ from torch.multiprocessing import Process
 import deepspeed
 
 import pytest
-from functools import wraps
-import unittest
-from pathlib import Path
-
-from pathlib import Path
 
 # Worker timeout *after* the first worker has completed.
 DEEPSPEED_UNIT_WORKER_TIMEOUT = 120
-
-
-def get_xdist_worker_id():
-    xdist_worker = os.environ.get('PYTEST_XDIST_WORKER', None)
-    if xdist_worker is not None:
-        xdist_worker_id = xdist_worker.replace('gw', '')
-        return int(xdist_worker_id)
-    return None
-
-
-def get_master_port():
-    master_port = os.environ.get('DS_TEST_PORT', '29503')
-    xdist_worker_id = get_xdist_worker_id()
-    if xdist_worker_id is not None:
-        master_port = str(int(master_port) + xdist_worker_id)
-    return master_port
-
-
-def set_cuda_visibile():
-    cuda_visible = os.environ.get("CUDA_VISIBLE_DEVICES", None)
-    xdist_worker_id = get_xdist_worker_id()
-    if xdist_worker_id is None:
-        xdist_worker_id = 0
-    if cuda_visible is None:
-        # CUDA_VISIBLE_DEVICES is not set, discover it from nvidia-smi instead
-        import subprocess
-        is_rocm_pytorch = hasattr(torch.version, 'hip') and torch.version.hip is not None
-        if is_rocm_pytorch:
-            rocm_smi = subprocess.check_output(['rocm-smi', '--showid'])
-            gpu_ids = filter(lambda s: 'GPU' in s,
-                             rocm_smi.decode('utf-8').strip().split('\n'))
-            num_gpus = len(list(gpu_ids))
-        else:
-            nvidia_smi = subprocess.check_output(['nvidia-smi', '--list-gpus'])
-            num_gpus = len(nvidia_smi.decode('utf-8').strip().split('\n'))
-        cuda_visible = ",".join(map(str, range(num_gpus)))
-
-    # rotate list based on xdist worker id, example below
-    # wid=0 -> ['0', '1', '2', '3']
-    # wid=1 -> ['1', '2', '3', '0']
-    # wid=2 -> ['2', '3', '0', '1']
-    # wid=3 -> ['3', '0', '1', '2']
-    dev_id_list = cuda_visible.split(",")
-    dev_id_list = dev_id_list[xdist_worker_id:] + dev_id_list[:xdist_worker_id]
-    os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(dev_id_list)
 
 
 def distributed_test(world_size=2, backend='nccl'):
@@ -84,16 +34,11 @@ def distributed_test(world_size=2, backend='nccl'):
         def dist_init(local_rank, num_procs, *func_args, **func_kwargs):
             """Initialize torch.distributed and execute the user function. """
             os.environ['MASTER_ADDR'] = '127.0.0.1'
-            os.environ['MASTER_PORT'] = get_master_port()
+            os.environ['MASTER_PORT'] = '29503'
             os.environ['LOCAL_RANK'] = str(local_rank)
             # NOTE: unit tests don't support multi-node so local_rank == global rank
             os.environ['RANK'] = str(local_rank)
             os.environ['WORLD_SIZE'] = str(num_procs)
-
-            # turn off NCCL logging if set
-            os.environ.pop('NCCL_DEBUG', None)
-
-            set_cuda_visibile()
 
             deepspeed.init_distributed(dist_backend=backend)
 
@@ -101,12 +46,6 @@ def distributed_test(world_size=2, backend='nccl'):
                 torch.cuda.set_device(local_rank)
 
             run_func(*func_args, **func_kwargs)
-
-            # make sure all ranks finish at the same time
-            torch.distributed.barrier()
-
-            # tear down after test completes
-            torch.distributed.destroy_process_group()
 
         def dist_launcher(num_procs, *func_args, **func_kwargs):
             """Launch processes and gracefully handle failures. """
@@ -163,8 +102,3 @@ def distributed_test(world_size=2, backend='nccl'):
         return run_func_decorator
 
     return dist_wrap
-
-
-def get_test_path(filename):
-    curr_path = Path(__file__).parent
-    return str(curr_path.joinpath(filename))

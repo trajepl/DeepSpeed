@@ -52,6 +52,10 @@ class SDLoaderBase(ABC):
         self.module_key = module_key
         num_ckpt = len(self.ckpt_list)
         idx = mp_rank * num_ckpt // mp_world_size
+
+        logger.info(
+            f'mp_world_size: {mp_world_size}, mp_rank: {mp_rank}, module_key: {module_key}'
+        )
         """ We have multiple cases to handle here for both training and inference:
             1. PipeModule loading mp_rank_*.pt files, is_pipe_parallel=True, module_key is not None
                 a. if no mp_size/pp_size resizing occurs, for both training & inference, loading
@@ -64,7 +68,7 @@ class SDLoaderBase(ABC):
                 a. if no mp_size resizing occurs, for both training & inference, loading
                    the mp_rank related checkpoint directly.
                 b. if has mp_size resizing, only Megatron model inference is supported,
-                   checkpoint file(s) will be merged/split according to mp_rank, mp_world_size and
+                   checkpoint file(s) will be merged/splitted according to mp_rank, mp_world_size and
                    checkpoint file list.
 
             3. Non-PipeModule loading mp_rank_*.pt files, is_pipe_parallel=False
@@ -81,7 +85,7 @@ class SDLoaderBase(ABC):
         merge_count = 1
         if num_ckpt == mp_world_size:
             assert os.path.exists(load_path)
-            #logger.info(f'rank: {mp_rank} loading checkpoint: {load_path}')
+            logger.info(f'rank: {mp_rank} loading checkpoint: {load_path}')
             sd = load_func(load_path, map_location=lambda storage, loc: storage)
 
             if quantize:
@@ -144,7 +148,7 @@ class SDLoaderBase(ABC):
             return 'model'
 
     def get_module(self, sd):
-        if self.module_key is None:
+        if sd is None:
             return sd
         elif self.module_key == AUTO_MODULE_KEY:
             return sd[self._choose_module_key(sd)]
@@ -161,7 +165,7 @@ class SDLoaderBase(ABC):
         return sd
 
     def check_ckpt_list(self):
-        #logger.info(f'checkpoint file list: {self.ckpt_list}')
+        logger.info(f'checkpoint file list: {self.ckpt_list}')
         assert len(self.ckpt_list) > 0
 
         sd = torch.load(self.ckpt_list[0], map_location=lambda storage, loc: storage)
@@ -374,7 +378,7 @@ class MegatronSDLoader(SDLoaderBase):
                          quantize_bits=8,
                          groups=64,
                          mlp_extra_grouping=True):
-        #self.sanity_check(self.ckpt_list[0])
+        self.sanity_check(self.ckpt_list[0])
 
         sd, num_to_split, ckpt_offset = self.get_split_state_dict(mp_world_size, mp_rank)
         ds_sd = copy.deepcopy(sd)
@@ -408,7 +412,7 @@ class MegatronSDLoader(SDLoaderBase):
                     num_to_split,
                     ckpt_offset,
                     ckpt_ver)
-            elif "mlp.dense_h_to_4h.weight" in key or "word_embeddings.weight" in key or "mlp.dense_h_to_4h.bias" in key or "final_linear.weight" in key:
+            elif "mlp.dense_h_to_4h.weight" in key or "word_embeddings.weight" in key or "mlp.dense_h_to_4h.bias" in key:
                 assert value.shape[0] % num_to_split == 0
                 split_size = value.shape[0] // num_to_split
                 if quantize and "mlp.dense_h_to_4h.weight" in key:
@@ -436,7 +440,7 @@ class MegatronSDLoader(SDLoaderBase):
 
         sd = torch.load(ckpt_file_name, map_location=lambda storage, loc: storage)
 
-        # partial_key is a sub-string of one key in the sd
+        # partail_key is a sub-string of one key in the sd
         def check_key_exist(partial_key, sd):
             keys = sd.keys()
             found = False

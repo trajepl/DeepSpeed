@@ -20,7 +20,6 @@ import shutil
 import subprocess
 import warnings
 from setuptools import setup, find_packages
-from setuptools.command import egg_info
 import time
 
 torch_available = True
@@ -32,20 +31,7 @@ except ImportError:
     print('[WARNING] Unable to import torch, pre-compiling ops will be disabled. ' \
         'Please visit https://pytorch.org/ to see how to properly install torch on your system.')
 
-from op_builder import ALL_OPS, get_default_compute_capabilities, OpBuilder
-
-# fetch rocm state
-is_rocm_pytorch = OpBuilder.is_rocm_pytorch()
-rocm_version = OpBuilder.installed_rocm_version()
-
-RED_START = '\033[31m'
-RED_END = '\033[0m'
-ERROR = f"{RED_START} [ERROR] {RED_END}"
-
-
-def abort(msg):
-    print(f"{ERROR} {msg}")
-    assert False, msg
+from op_builder import ALL_OPS, get_default_compute_capatabilities
 
 
 def fetch_requirements(path):
@@ -55,28 +41,16 @@ def fetch_requirements(path):
 
 install_requires = fetch_requirements('requirements/requirements.txt')
 extras_require = {
-    '1bit': [], # add cupy based on cuda/rocm version
-    '1bit_mpi': fetch_requirements('requirements/requirements-1bit-mpi.txt'),
+    '1bit_adam': fetch_requirements('requirements/requirements-1bit-adam.txt'),
     'readthedocs': fetch_requirements('requirements/requirements-readthedocs.txt'),
     'dev': fetch_requirements('requirements/requirements-dev.txt'),
-    'autotuning': fetch_requirements('requirements/requirements-autotuning.txt'),
-    'autotuning_ml': fetch_requirements('requirements/requirements-autotuning-ml.txt'),
-    'sparse_attn': fetch_requirements('requirements/requirements-sparse_attn.txt')
 }
 
-# Add specific cupy version to both onebit extension variants
+# If MPI is available add 1bit-adam requirements
 if torch_available and torch.cuda.is_available():
-    cupy = None
-    if is_rocm_pytorch:
-        rocm_major, rocm_minor = rocm_version
-        # XXX cupy support for rocm 5 is not available yet
-        if rocm_major <= 4:
-            cupy = f"cupy-rocm-{rocm_major}-{rocm_minor}"
-    else:
+    if shutil.which('ompi_info') or shutil.which('mpiname'):
         cupy = f"cupy-cuda{torch.version.cuda.replace('.','')[:3]}"
-    if cupy:
-        extras_require['1bit'].append(cupy)
-        extras_require['1bit_mpi'].append(cupy)
+        extras_require['1bit_adam'].append(cupy)
 
 # Make an [all] extra that installs all needed dependencies
 all_extras = set()
@@ -105,7 +79,7 @@ if torch_available and not torch.cuda.is_available():
         "you can ignore this message. Adding compute capability for Pascal, Volta, and Turing "
         "(compute capabilities 6.0, 6.1, 6.2)")
     if os.environ.get("TORCH_CUDA_ARCH_LIST", None) is None:
-        os.environ["TORCH_CUDA_ARCH_LIST"] = get_default_compute_capabilities()
+        os.environ["TORCH_CUDA_ARCH_LIST"] = get_default_compute_capatabilities()
 
 ext_modules = []
 
@@ -127,44 +101,29 @@ def command_exists(cmd):
         return result.wait() == 0
 
 
-def op_envvar(op_name):
+def op_enabled(op_name):
     assert hasattr(ALL_OPS[op_name], 'BUILD_VAR'), \
         f"{op_name} is missing BUILD_VAR field"
-    return ALL_OPS[op_name].BUILD_VAR
-
-
-def op_enabled(op_name):
-    env_var = op_envvar(op_name)
+    env_var = ALL_OPS[op_name].BUILD_VAR
     return int(os.environ.get(env_var, BUILD_OP_DEFAULT))
 
 
-compatible_ops = dict.fromkeys(ALL_OPS.keys(), False)
 install_ops = dict.fromkeys(ALL_OPS.keys(), False)
 for op_name, builder in ALL_OPS.items():
     op_compatible = builder.is_compatible()
-    compatible_ops[op_name] = op_compatible
-
-    # If op is requested but not available, throw an error
-    if op_enabled(op_name) and not op_compatible:
-        env_var = op_envvar(op_name)
-        if env_var not in os.environ:
-            builder.warning(f"One can disable {op_name} with {env_var}=0")
-        abort(f"Unable to pre-compile {op_name}")
 
     # If op is compatible update install reqs so it can potentially build/run later
     if op_compatible:
         reqs = builder.python_requirements()
         install_requires += builder.python_requirements()
 
-    # if op is compatible but install is not enabled (JIT mode)
-    if is_rocm_pytorch and op_compatible and not op_enabled(op_name):
-        builder.hipify_extension()
-
     # If op install enabled, add builder to extensions
     if op_enabled(op_name) and op_compatible:
         assert torch_available, f"Unable to pre-compile {op_name}, please first install torch"
         install_ops[op_name] = op_enabled(op_name)
         ext_modules.append(builder.builder())
+
+compatible_ops = {op_name: op.is_compatible() for (op_name, op) in ALL_OPS.items()}
 
 print(f'Install Ops={install_ops}')
 
@@ -198,7 +157,6 @@ if sys.platform == "win32":
     # It needs Administrator privilege to create symlinks on Windows.
     create_dir_symlink('..\\..\\csrc', '.\\deepspeed\\ops\\csrc')
     create_dir_symlink('..\\..\\op_builder', '.\\deepspeed\\ops\\op_builder')
-    egg_info.manifest_maker.template = 'MANIFEST_win.in'
 
 # Parse the DeepSpeed version string from version.txt
 version_str = open('version.txt', 'r').read().strip()
@@ -223,17 +181,9 @@ else:
 torch_version = ".".join([TORCH_MAJOR, TORCH_MINOR])
 # Set cuda_version to 0.0 if cpu-only
 cuda_version = "0.0"
-# Set hip_version to 0.0 if cpu-only
-hip_version = "0.0"
 if torch_available and torch.version.cuda is not None:
     cuda_version = ".".join(torch.version.cuda.split('.')[:2])
-if torch_available and hasattr(torch.version, 'hip') and torch.version.hip is not None:
-    hip_version = ".".join(torch.version.hip.split('.')[:2])
-torch_info = {
-    "version": torch_version,
-    "cuda_version": cuda_version,
-    "hip_version": hip_version
-}
+torch_info = {"version": torch_version, "cuda_version": cuda_version}
 
 print(f"version={version_str}, git_hash={git_hash}, git_branch={git_branch}")
 with open('deepspeed/git_version_info_installed.py', 'w') as fd:
@@ -263,16 +213,10 @@ setup(name='deepspeed',
       author='DeepSpeed Team',
       author_email='deepspeed@microsoft.com',
       url='http://deepspeed.ai',
-      project_urls={
-          'Documentation': 'https://deepspeed.readthedocs.io',
-          'Source': 'https://github.com/microsoft/DeepSpeed',
-      },
       install_requires=install_requires,
       extras_require=extras_require,
       packages=find_packages(exclude=["docker",
-                                      "third_party",
-                                      "csrc",
-                                      "op_builder"]),
+                                      "third_party"]),
       include_package_data=True,
       scripts=[
           'bin/deepspeed',
@@ -285,8 +229,7 @@ setup(name='deepspeed',
       classifiers=[
           'Programming Language :: Python :: 3.6',
           'Programming Language :: Python :: 3.7',
-          'Programming Language :: Python :: 3.8',
-          'Programming Language :: Python :: 3.9'
+          'Programming Language :: Python :: 3.8'
       ],
       license='MIT',
       ext_modules=ext_modules,

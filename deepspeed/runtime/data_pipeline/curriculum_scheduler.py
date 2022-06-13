@@ -17,7 +17,6 @@ class CurriculumScheduler(object):
         self.state['max_difficulty'] = config['max_difficulty']
         self.state['current_difficulty'] = config['min_difficulty']
         self.state['schedule_type'] = config['schedule_type']
-        self.first_step = True
         if config['schedule_type'] == 'fixed_discrete':
             """
             The schedule_config is a list of difficulty and a list of max
@@ -37,7 +36,11 @@ class CurriculumScheduler(object):
             assert len(config['schedule_config']['difficulty']) > 0
             assert len(config['schedule_config']['difficulty']) == len(
                 config['schedule_config']['max_step']) + 1
-            self.state['schedule'] = config['schedule_config']
+            self.state['schedule'] = {}
+            for i in range(len(config['schedule_config']['max_step'])):
+                self.state['schedule'][config['schedule_config']['difficulty'][i]] = \
+                    [config['schedule_config']['max_step'][i],
+                     config['schedule_config']['difficulty'][i+1]]
         elif config['schedule_type'] == 'fixed_root':
             """
             The schedule_config includes:
@@ -96,15 +99,13 @@ class CurriculumScheduler(object):
     def set_state(self, state):
         self.state = state
 
-    def __fixed_discrete_get_difficulty(self, global_steps):
-        s_state = self.state['schedule']
-        if global_steps > s_state['max_step'][-1]:
-            return s_state['difficulty'][-1]
-        for i in range(len(s_state['max_step'])):
-            if global_steps <= s_state['max_step'][i]:
-                return s_state['difficulty'][i]
+    def __fixed_discrete_update_difficulty(self, global_steps):
+        s_state = self.state['schedule'][self.state['current_difficulty']]
+        if global_steps > s_state[0]:
+            self.state['current_difficulty'] = s_state[1]
+        return self.state['current_difficulty']
 
-    def __fixed_root_get_difficulty(self, global_steps, root_degree=None):
+    def __fixed_root_update_difficulty(self, global_steps, root_degree=None):
         s_state = self.state['schedule']
         if root_degree is None:
             root_degree = s_state['root_degree']
@@ -115,20 +116,18 @@ class CurriculumScheduler(object):
             (self.state['max_difficulty'] - self.state['min_difficulty']) +
             self.state['min_difficulty'])
         next_difficulty -= (next_difficulty % s_state['difficulty_step'])
-        next_difficulty = min(next_difficulty, self.state['max_difficulty'])
-        return next_difficulty
-
-    def get_difficulty(self, global_steps):
-        if self.state['schedule_type'] == 'fixed_discrete':
-            return self.__fixed_discrete_get_difficulty(global_steps)
-        elif self.state['schedule_type'] == 'fixed_linear':
-            return self.__fixed_root_get_difficulty(global_steps, 1)
-        elif self.state['schedule_type'] == 'fixed_root':
-            return self.__fixed_root_get_difficulty(global_steps)
-        else:
-            raise RuntimeError('Unsupported curriculum schedule type')
+        self.state['current_difficulty'] = min(next_difficulty,
+                                               self.state['max_difficulty'])
+        return self.state['current_difficulty']
 
     def update_difficulty(self, global_steps):
-        if self.state['current_difficulty'] < self.state['max_difficulty']:
-            self.state['current_difficulty'] = self.get_difficulty(global_steps)
-        return self.state['current_difficulty']
+        if self.state['current_difficulty'] >= self.state['max_difficulty']:
+            return self.state['current_difficulty']
+        if self.state['schedule_type'] == 'fixed_discrete':
+            return self.__fixed_discrete_update_difficulty(global_steps)
+        elif self.state['schedule_type'] == 'fixed_linear':
+            return self.__fixed_root_update_difficulty(global_steps, 1)
+        elif self.state['schedule_type'] == 'fixed_root':
+            return self.__fixed_root_update_difficulty(global_steps)
+        else:
+            raise RuntimeError('Unsupported curriculum schedule type')

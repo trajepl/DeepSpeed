@@ -1,3 +1,4 @@
+# coding=utf-8
 # Copyright (c) 2019, The Microsoft DeepSpeed Team. All rights reserved.
 #
 # Note: please copy webtext data to "Megatron-LM" folder, before running this script.

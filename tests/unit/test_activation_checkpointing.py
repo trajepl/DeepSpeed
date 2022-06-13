@@ -7,10 +7,9 @@ import pytest
 import torch
 
 import deepspeed
-
 ckpt = deepspeed.checkpointing.checkpoint
 
-from .common import distributed_test
+from common import distributed_test
 
 
 def _compute(module, *inputs, do_checkpoint=False):
@@ -166,7 +165,7 @@ def test_ckpt_inputs1_outputs1():
     _test_activation_checkpoint(module, inputs)
 
 
-# both bool and float are important, as bool is not differentiable
+# both bool and float are important, as bool is not diffentiable
 @pytest.mark.parametrize('mask',
                          [
                              _mixed_mask(),

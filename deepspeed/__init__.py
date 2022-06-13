@@ -1,19 +1,15 @@
 '''
 Copyright 2020 The Microsoft DeepSpeed Team
 '''
-
 import sys
 import types
-from typing import Optional, Union
-import torch
-from torch.optim import Optimizer
-from torch.optim.lr_scheduler import _LRScheduler
+
 from packaging import version as pkg_version
 
 from . import ops
 from . import module_inject
 
-from .runtime.engine import DeepSpeedEngine, DeepSpeedOptimizerCallable, DeepSpeedSchedulerCallable
+from .runtime.engine import DeepSpeedEngine
 from .runtime.engine import ADAM_OPTIMIZER, LAMB_OPTIMIZER
 from .runtime.pipe.engine import PipelineEngine
 from .inference.engine import InferenceEngine
@@ -28,7 +24,6 @@ from .utils import log_dist
 from .utils.distributed import init_distributed
 
 from .runtime import zero
-from .runtime import DeepSpeedOptimizer, ZeROOptimizer
 
 from .pipe import PipelineModule
 
@@ -47,24 +42,30 @@ __version_major__, __version_minor__, __version_patch__ = _parse_version(__versi
 __git_hash__ = git_hash
 __git_branch__ = git_branch
 
+# Provide backwards compatability with old deepspeed.pt module structure, should hopefully not be used
+pt = types.ModuleType('pt', 'dummy pt module for backwards compatability')
+deepspeed = sys.modules[__name__]
+setattr(deepspeed, 'pt', pt)
+setattr(deepspeed.pt, 'deepspeed_utils', deepspeed.runtime.utils)
+sys.modules['deepspeed.pt'] = deepspeed.pt
+sys.modules['deepspeed.pt.deepspeed_utils'] = deepspeed.runtime.utils
+setattr(deepspeed.pt, 'deepspeed_config', deepspeed.runtime.config)
+sys.modules['deepspeed.pt.deepspeed_config'] = deepspeed.runtime.config
+setattr(deepspeed.pt, 'loss_scaler', deepspeed.runtime.fp16.loss_scaler)
+sys.modules['deepspeed.pt.loss_scaler'] = deepspeed.runtime.fp16.loss_scaler
+
 
 def initialize(args=None,
-               model: torch.nn.Module = None,
-               optimizer: Optional[Union[Optimizer,
-                                         DeepSpeedOptimizerCallable]] = None,
-               model_parameters: Optional[torch.nn.Module] = None,
-               training_data: Optional[torch.utils.data.Dataset] = None,
-               lr_scheduler: Optional[Union[_LRScheduler,
-                                            DeepSpeedSchedulerCallable]] = None,
+               model=None,
+               optimizer=None,
+               model_parameters=None,
+               training_data=None,
+               lr_scheduler=None,
                mpu=None,
-               dist_init_required: Optional[bool] = None,
+               dist_init_required=None,
                collate_fn=None,
                config=None,
-               config_params=None,
-               enable_nebula=None,
-               disable_nebula_load=False,
-               nebula_load_path=None,
-               nebula_config_params=None):
+               config_params=None):
     """Initialize the DeepSpeed Engine.
 
     Arguments:
@@ -73,16 +74,16 @@ def initialize(args=None,
 
         model: Required: nn.module class before apply any wrappers
 
-        optimizer: Optional: a user defined Optimizer or Callable that returns an Optimizer object.
-            This overrides any optimizer definition in the DeepSpeed json config.
+        optimizer: Optional: a user defined optimizer, this is typically used instead of defining
+            an optimizer in the DeepSpeed json config.
 
         model_parameters: Optional: An iterable of torch.Tensors or dicts.
             Specifies what Tensors should be optimized.
 
         training_data: Optional: Dataset of type torch.utils.data.Dataset
 
-        lr_scheduler: Optional: Learning Rate Scheduler Object or a Callable that takes an Optimizer and returns a Scheduler object.
-            The scheduler object should define a get_lr(), step(), state_dict(), and load_state_dict() methods
+        lr_scheduler: Optional: Learning Rate Scheduler Object. It should define a get_lr(),
+            step(), state_dict(), and load_state_dict() methods
 
         mpu: Optional: A model parallelism unit object that implements
             get_{model,data}_parallel_{rank,group,world_size}()
@@ -118,6 +119,7 @@ def initialize(args=None,
         __git_hash__,
         __git_branch__),
              ranks=[0])
+
     assert model is not None, "deepspeed.initialize requires a model"
 
     if not isinstance(model, PipelineModule):
@@ -131,11 +133,7 @@ def initialize(args=None,
                                  dist_init_required=dist_init_required,
                                  collate_fn=collate_fn,
                                  config=config,
-                                 config_params=config_params,
-                                 enable_nebula=enable_nebula,
-                                 disable_nebula_load=disable_nebula_load,
-                                 nebula_load_path=nebula_load_path,
-                                 nebula_config_params=nebula_config_params)
+                                 config_params=config_params)
     else:
         assert mpu is None, "mpu must be None with pipeline parallelism"
         engine = PipelineEngine(args=args,
@@ -148,11 +146,7 @@ def initialize(args=None,
                                 dist_init_required=dist_init_required,
                                 collate_fn=collate_fn,
                                 config=config,
-                                config_params=config_params,
-                                enable_nebula=enable_nebula,
-                                disable_nebula_load=disable_nebula_load,
-                                nebula_load_path=nebula_load_path,
-                                nebula_config_params=nebula_config_params)
+                                config_params=config_params)
 
     return_items = [
         engine,
@@ -211,40 +205,6 @@ def _add_core_arguments(parser):
         "Run via MPI, this will attempt to discover the necessary variables to initialize torch "
         "distributed from the MPI environment")
 
-    group.add_argument(
-        '--nebula',
-        default=False,
-        action='store_true',
-        help=
-        "Save checkpoint via torch_nebula.save, this will attempt to save the time from torch.save")
-
-    group.add_argument(
-        '--disable_nebula_load',
-        default=False,
-        action='store_true',
-        help=
-        "Load checkpoint via the way which customers want, this will need the converter functions to convert the tier3 storage path")
-
-    group.add_argument(
-        '--nebula_load_path',
-        default=None,
-        help="Load nebula checkpoint via the path which customers specified")
-
-    group.add_argument(
-        '--persistent_storage_path',
-        default=None,
-        help="Iter3 path for persistence")
-
-    group.add_argument(
-        '--persistent_time_interval',
-        default=None,
-        help="Time interval for tier3 saving")
-
-    group.add_argument(
-        '--num_of_version_in_retention',
-        default=2,
-        help="File numbers to be remained")
-
     return parser
 
 
@@ -265,38 +225,21 @@ def add_config_arguments(parser):
 
 
 def init_inference(model,
-                   triangular_masking=True,
                    mp_size=1,
-                   training_mp_size=1,
                    mpu=None,
-                   ep_group=None,
-                   expert_mp_group=None,
                    checkpoint=None,
+                   module_key='module',
                    dtype=None,
                    injection_policy=None,
                    replace_method='auto',
-                   quantization_setting=None,
-                   replace_with_kernel_inject=False,
-                   return_tuple=True,
-                   ep_size=1,
-                   moe=False,
-                   moe_experts=1,
-                   moe_type='standard',
-                   args=None,
-                   enable_cuda_graph=False):
+                   quantization_setting=None):
     """Initialize the DeepSpeed InferenceEngine.
 
     Arguments:
         model: Required: nn.module class before apply any wrappers
 
-        triangular_masking: Required: this shows the type of masking for attention scores in transformer layer
-            note that the masking is application specific.
-
         mp_size: Optional: Desired model parallel size, default is 1 meaning no
             model parallelism.
-
-        training_mp_size: Optional: if loading a checkpoint this is the mp size that it was trained with,
-            it may be different than what the mp size that you want to use during inference.
 
         mpu: Optional: A model parallelism unit object that implements
             get_{model,data}_parallel_{rank,group,world_size}()
@@ -319,7 +262,6 @@ def init_inference(model,
             of groups used in quantization. A tuple is passed in if we want to mention that there is extra-grouping
             for the MLP part of a Transformer layer (e.g. (True, 8) shows we quantize the model using 8 groups for
             all the network except the MLP part that we use 8 extra grouping).
-        replace_with_kernel_inject: If set we inject kernel as we initialize the inference-engine
 
     Returns:
         A deepspeed.InferenceEngine wrapped model.
@@ -330,25 +272,16 @@ def init_inference(model,
         __git_branch__),
              ranks=[0])
 
-    engine = InferenceEngine(model,
-                             triangular_masking,
-                             mp_size,
-                             training_mp_size,
-                             ep_size,
-                             mpu,
-                             ep_group,
-                             expert_mp_group,
-                             checkpoint,
-                             dtype,
-                             injection_policy,
-                             return_tuple,
-                             replace_method,
-                             quantization_setting,
-                             replace_with_kernel_inject,
-                             moe,
-                             moe_experts,
-                             moe_type,
-                             args,
-                             enable_cuda_graph)
+    if isinstance(model, PipelineModule):
+        raise NotImplementedError("pipeline module support is not implemented yet")
+    else:
+        engine = InferenceEngine(model,
+                                 mp_size,
+                                 mpu,
+                                 checkpoint,
+                                 dtype,
+                                 injection_policy,
+                                 replace_method,
+                                 quantization_setting)
 
     return engine

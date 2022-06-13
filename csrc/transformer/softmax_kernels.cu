@@ -4,20 +4,6 @@
 
 namespace cg = cooperative_groups;
 
-dim3 get_attn_softmax_grid(int batch_size, int heads, int sequence_length, int threads)
-{
-    int seq_length4 = sequence_length / 4;
-    int block_compute_size =
-        (seq_length4 < threads ? (int)pow(2.0, floor(log2((float)(threads / seq_length4)))) : 1);
-    // Note that the Y and Z dimensions are limited to 65535, while X is basically unlimited:
-    // https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#features-and-technical-specifications
-    // The batch size is typically relatively small, while the sequence length could potentially be
-    // arbitrarily large. We therefore place the batch size second to avoid hitting the Y limit.
-    unsigned x = heads * sequence_length / block_compute_size;
-    unsigned y = batch_size;
-    return {x, y};
-}
-
 // Fused attention + softmax
 template <int tbSize, int blockStride, int tbSeq>
 __global__ void attn_softmax(float* vals,
@@ -28,7 +14,7 @@ __global__ void attn_softmax(float* vals,
 {
     __shared__ float partialSum[MAX_WARP_NUM];
 
-    int warp_num = blockDim.x >> WARP_SIZE_BITS;
+    int warp_num = blockDim.x >> 5;
 
     int iteration_stride = blockDim.x;
     int block_width = blockStride * seq_length;
@@ -36,16 +22,16 @@ __global__ void attn_softmax(float* vals,
     cg::thread_block b = cg::this_thread_block();
     cg::thread_block_tile<tbSize> g = cg::tiled_partition<tbSize>(b);
 
-    int batch = blockIdx.y;
-    int row = blockIdx.x;
+    int batch = blockIdx.x;
+    int row = blockIdx.y;
     int max_threads_in_sequence = std::max(seq_length, tbSeq);
     int seq_lane = threadIdx.x % max_threads_in_sequence;
 
-    int data_offset = batch * (gridDim.x * block_width) + row * block_width +
+    int data_offset = batch * (gridDim.y * block_width) + row * block_width +
                       (threadIdx.x / max_threads_in_sequence) * seq_length;
     int mask_offset = batch * seq_length;
 
-    int wid = threadIdx.x >> WARP_SIZE_BITS;
+    int wid = threadIdx.x >> 5;
     int lane = threadIdx.x & 0x1f;
 
     float4* val_cast = reinterpret_cast<float4*>(vals);
@@ -156,10 +142,10 @@ __global__ void attn_softmax(__half* vals,
                              int seq_length,
                              int iterations)
 {
-#ifdef HALF_PRECISION_AVAILABLE
+#if __CUDA_ARCH__ >= 700
     __shared__ float partialSum[MAX_WARP_NUM];
 
-    int warp_num = blockDim.x >> WARP_SIZE_BITS;
+    int warp_num = blockDim.x >> 5;
 
     int iteration_stride = blockDim.x;
     int block_width = blockStride * seq_length;
@@ -167,16 +153,16 @@ __global__ void attn_softmax(__half* vals,
     cg::thread_block b = cg::this_thread_block();
     cg::thread_block_tile<tbSize> g = cg::tiled_partition<tbSize>(b);
 
-    int batch = blockIdx.y;
-    int row = blockIdx.x;
+    int batch = blockIdx.x;
+    int row = blockIdx.y;
     int max_threads_in_sequence = std::max(seq_length, tbSeq);
     int seq_lane = threadIdx.x % max_threads_in_sequence;
 
-    int data_offset = batch * (gridDim.x * block_width) + row * block_width +
+    int data_offset = batch * (gridDim.y * block_width) + row * block_width +
                       (threadIdx.x / max_threads_in_sequence) * seq_length;
     int mask_offset = batch * seq_length;
 
-    int wid = threadIdx.x >> WARP_SIZE_BITS;
+    int wid = threadIdx.x >> 5;
     int lane = threadIdx.x & 0x1f;
 
     float2* val_cast = reinterpret_cast<float2*>(vals);
@@ -314,7 +300,9 @@ void launch_attn_softmax<float>(float* vals,
     const int threads = 128;
     int seq_length4 = sequence_length / 4;
 
-    dim3 grid_dim = get_attn_softmax_grid(batch_size, heads, sequence_length, threads);
+    int block_compute_size =
+        (seq_length4 < threads ? (int)pow(2.0, floor(log2((float)(threads / seq_length4)))) : 1);
+    dim3 grid_dim(batch_size, heads * sequence_length / block_compute_size);
 
     int subblock_max_workload = MAX_THREAD_ITERATIONS * 4 * threads;
 
@@ -345,7 +333,10 @@ void launch_attn_softmax<float>(float* vals,
             <<<grid_dim, block_dim, 0, stream>>>(vals, attn_mask, heads, seq_length4, iterations);
     else {
         const int threads = 256;
-        dim3 grid_dim = get_attn_softmax_grid(batch_size, heads, sequence_length, threads);
+        block_compute_size =
+            (seq_length4 < threads ? (int)pow(2.0, floor(log2((float)(threads / seq_length4))))
+                                   : 1);
+        dim3 grid_dim(batch_size, heads * sequence_length / block_compute_size);
 
         int subblock_max_workload = MAX_THREAD_ITERATIONS * 4 * threads;
 
@@ -379,7 +370,9 @@ void launch_attn_softmax<__half>(__half* vals,
     const int threads = 128;
     int seq_length4 = sequence_length / 4;
 
-    dim3 grid_dim = get_attn_softmax_grid(batch_size, heads, sequence_length, threads);
+    int block_compute_size =
+        (seq_length4 < threads ? (int)pow(2.0, floor(log2((float)(threads / seq_length4)))) : 1);
+    dim3 grid_dim(batch_size, heads * sequence_length / block_compute_size);
 
     int subblock_max_workload = MAX_THREAD_ITERATIONS * 4 * threads;
 
@@ -411,7 +404,10 @@ void launch_attn_softmax<__half>(__half* vals,
             <<<grid_dim, block_dim, 0, stream>>>(vals, attn_mask, heads, seq_length4, iterations);
     else {
         const int threads = 256;
-        dim3 grid_dim = get_attn_softmax_grid(batch_size, heads, sequence_length, threads);
+        block_compute_size =
+            (seq_length4 < threads ? (int)pow(2.0, floor(log2((float)(threads / seq_length4))))
+                                   : 1);
+        dim3 grid_dim(batch_size, heads * sequence_length / block_compute_size);
 
         int subblock_max_workload = MAX_THREAD_ITERATIONS * 4 * threads;
 
@@ -439,7 +435,7 @@ __global__ void softmax_backward_kernel(T* out_grad, const T* soft_inp, int seq_
 {
     __shared__ float partialSum[MAX_WARP_NUM];
 
-    int warp_num = blockDim.x >> WARP_SIZE_BITS;  // warp-count = num_threads / WARP_SIZE (32)
+    int warp_num = blockDim.x >> 5;  // warp-count = num_threads / WARP_SIZE (32)
 
     int iteration_stride = blockDim.x;
     int block_width = blockStride * seq_length;
@@ -454,7 +450,7 @@ __global__ void softmax_backward_kernel(T* out_grad, const T* soft_inp, int seq_
     int row = blockIdx.x;
     int id = threadIdx.x;
 
-    int wid = id >> WARP_SIZE_BITS;
+    int wid = id >> 5;
     int lane = id & 0x1f;
 
     T val_reg[MAX_THREAD_ITERATIONS];
