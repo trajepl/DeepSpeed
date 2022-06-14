@@ -324,6 +324,7 @@ class DeepSpeedEngine(Module):
         self.save_non_zero_checkpoint = False
         self.save_zero_checkpoint = False
         self.enable_nebula = enable_nebula and torch_nebula is not None
+        self.persist_path = None # for specific checkpoint loading from given tier3 path
         self.nebula_config_params = nebula_config_params
         self._configure_checkpointing(dist_init_required)
 
@@ -2319,7 +2320,9 @@ class DeepSpeedEngine(Module):
                         load_module_strict=True,
                         load_optimizer_states=True,
                         load_lr_scheduler_states=True,
-                        load_module_only=False):
+                        load_module_only=False,
+                        enable_nebula_load=True,
+                        nebula_load_path_tier3=None):
         """Load training checkpoint
 
         Arguments:
@@ -2342,9 +2345,13 @@ class DeepSpeedEngine(Module):
         before ``load_checkpoint()``.
         """
 
+        enable_nebula_tmp = self.enable_nebula
+        self.enable_nebula = enable_nebula_load and self.enable_nebula
+        self.persist_path = nebula_load_path_tier3
+
         latest_checkpoint = None
         if self.enable_nebula:
-            latest_checkpoint = torch_nebula.get_latest_checkpoint()
+            latest_checkpoint = torch_nebula.get_latest_checkpoint(persist_path=self.persist_path)
             if latest_checkpoint is None or (latest_checkpoint is not None and latest_checkpoint.tag == ''):
                 logger.warning(f"Unable to find latest valid checkpoint from Nebula!")
                 return None, None
@@ -2379,6 +2386,9 @@ class DeepSpeedEngine(Module):
                 load_optimizer_states=load_optimizer_states)
             if not success:
                 self.optimizer._restore_from_fp16_weights()
+
+        self.enable_nebula = enable_nebula_tmp
+        self.persist_path = None
 
         return load_path, client_states
 
