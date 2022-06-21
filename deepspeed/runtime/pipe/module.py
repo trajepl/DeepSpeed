@@ -587,7 +587,7 @@ class PipelineModule(nn.Module):
             else:
                 torch.save(final_state_dict, model_ckpt_path)
 
-    def load_state_dir(self, load_dir, strict=True, enable_nebula=False, tag=None):
+    def load_state_dir(self, load_dir, strict=True, enable_nebula=False, tag=None, persist_path=None):
         for idx, layer in enumerate(self.forward_funcs):
             # Functions, etc. will not have state_dicts
             if not hasattr(layer, 'load_state_dict'):
@@ -597,7 +597,7 @@ class PipelineModule(nn.Module):
             model_ckpt_list = self.ckpt_layer_path_list(load_dir, idx)
             
             if enable_nebula and torch_nebula is not None:
-                latest_checkpoint = torch_nebula.get_latest_checkpoint()
+                latest_checkpoint = torch_nebula.get_latest_checkpoint(persist_path=persist_path)
                 for model_ckpt_path in model_ckpt_list:
                     partition_name = os.path.basename(model_ckpt_path)
                     assert(latest_checkpoint.tag == tag)

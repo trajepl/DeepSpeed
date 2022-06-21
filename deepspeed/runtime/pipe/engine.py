@@ -1299,7 +1299,13 @@ class PipelineEngine(DeepSpeedEngine):
             super().load_module_state_dict(state_dict, strict)
             return
 
-        self.module.load_state_dir(load_dir=self._curr_ckpt_path, strict=strict, tag=tag, enable_nebula=self.enable_nebula)
+        self.module.load_state_dir(
+            load_dir=self._curr_ckpt_path,
+            strict=strict,
+            tag=tag,
+            enable_nebula=self.enable_nebula,
+            persist_path=self.persist_path
+        )
 
     # A map of PipeInstruction types to methods. Each method will be executed with the
     # kwargs provided to the PipeInstruction from the scheduler.
