@@ -582,8 +582,7 @@ class PipelineModule(nn.Module):
                  for k,
                  v in orig_state_dict.items()})
             if enable_nebula and torch_nebula is not None:
-                checkpoint = torch_nebula.Checkpoint(tag, -2)
-                checkpoint.save(os.path.basename(model_ckpt_path), final_state_dict)
+                self.torch_checkpoint.save(os.path.basename(model_ckpt_path), final_state_dict)
             else:
                 torch.save(final_state_dict, model_ckpt_path)
 

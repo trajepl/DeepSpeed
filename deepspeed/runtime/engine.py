@@ -326,6 +326,7 @@ class DeepSpeedEngine(Module):
         self.enable_nebula = enable_nebula and torch_nebula is not None
         self.persist_path = None # for specific checkpoint loading from given tier3 path
         self.nebula_config_params = nebula_config_params
+        self.nebula_checkpoint = None
         self._configure_checkpointing(dist_init_required)
 
         if self.eigenvalue_enabled():
@@ -2636,7 +2637,7 @@ class DeepSpeedEngine(Module):
             elif not valid:
                 logger.warning(msg)
 
-    def save_checkpoint(self, save_dir, tag=None, client_state={}, save_latest=True):
+    def save_checkpoint(self, save_dir, tag=None, client_state={}, save_latest=True, nebula_checkpoint=None, is_nebula_sync_mode=False):
         r"""Save training checkpoint
 
         Arguments:
@@ -2645,12 +2646,19 @@ class DeepSpeedEngine(Module):
                 used if not provided. Tag name must be the same across all ranks.
             client_state: Optional. State dictionary used for saving required training states in the client code.
             save_latest: Optional. Save a file 'latest' pointing to the latest saved checkpoint.
+            nebula_checkpoint: init nebula_checkpoint from trainer. If 'True', we won't commit in deepspeed.
+            is_nebula_sync_mode: whether to save checkpoint in the sync mode by nebula
 
         Important: all processes must call this method and not just the process with rank 0. It is
         because each process needs to save its master weights and scheduler+optimizer states. This
         method will hang waiting to synchronize with other processes if it's called just for the
         process with rank 0.
         """
+
+        self.nebula_checkpoint = nebula_checkpoint
+        if self.nebula_checkpoint is None:
+            self.nebula_checkpoint = torch_nebula.Checkpoint(tag, -2, sync_mode=is_nebula_sync_mode)
+
         if self.zero_optimization_partition_weights():
             # Prepare for state_dict() by ensuring all parameters are partitioned
             self.optimizer.save_checkpoint_prologue()
@@ -2693,9 +2701,8 @@ class DeepSpeedEngine(Module):
             self.optimizer.save_checkpoint_epilogue()
 
         # commit the nebula save
-        if self.enable_nebula:
-            checkpoint = torch_nebula.Checkpoint(tag, -2)
-            checkpoint.commit()
+        if self.enable_nebula and self.nebula_checkpoint is None:
+            self.nebula_checkpoint.commit()
         # Save latest checkpoint tag
         torch.distributed.barrier()
         if save_latest and self.global_rank == 0:
@@ -2779,8 +2786,7 @@ class DeepSpeedEngine(Module):
             logger.info(
                 f"{'Nebula' if self.enable_nebula else ''} Saving model expert {global_expert_id} checkpoint: {expert_save_dir}")
             if self.enable_nebula:
-                checkpoint = torch_nebula.Checkpoint(tag, -2)
-                checkpoint.save(expert_save_dir, expert_state_dict)
+                self.nebula_checkpoint.save(expert_save_dir, expert_state_dict)
             else:
                 torch.save(expert_state_dict, expert_save_dir)
 
@@ -2792,8 +2798,7 @@ class DeepSpeedEngine(Module):
         }
         optimizer_state_save_path = self._get_optimizer_ckpt_name(save_dir, tag, expp_rank)
         if self.enable_nebula:
-            checkpoint = torch_nebula.Checkpoint(tag, -2)
-            checkpoint.save(optimizer_state_save_path, optimizer_state)
+            self.nebula_checkpoint.save(optimizer_state_save_path, optimizer_state)
         else:
             torch.save(optimizer_state, optimizer_state_save_path)
 
@@ -2823,8 +2828,7 @@ class DeepSpeedEngine(Module):
             state.update(client_state)
             logger.info(f"{'Nebula' if self.enable_nebula else ''} Saving model checkpoint: {save_path}")
             if self.enable_nebula:
-                checkpoint = torch_nebula.Checkpoint(tag, -2)
-                checkpoint.save(save_path, state)
+                self.nebula_checkpoint.save(save_path, state)
             else:
                 torch.save(state, save_path)
         self._curr_save_path = None
@@ -2882,8 +2886,7 @@ class DeepSpeedEngine(Module):
         log_dist(message=f"{'Nebula' if self.enable_nebula else ''} Saving model checkpoint: {save_path}", ranks=[0])
         #logger.info('Saving model checkpoint: {}'.format(save_path))
         if self.enable_nebula:
-            checkpoint = torch_nebula.Checkpoint(tag, -2)
-            checkpoint.save(save_path, state)
+            self.nebula_checkpoint.save(save_path, state)
         else:
             torch.save(state, save_path)
         self._curr_save_path = None
@@ -2968,8 +2971,7 @@ class DeepSpeedEngine(Module):
                        ds_config=self.config,
                        ds_version=version)
         if self.enable_nebula:
-            checkpoint = torch_nebula.Checkpoint(tag, -2)
-            checkpoint.save(zero_checkpoint_name, zero_sd)
+            self.nebula_checkpoint.save(zero_checkpoint_name, zero_sd)
         else:
             torch.save(zero_sd, zero_checkpoint_name)
         if self.global_rank == 0:
