@@ -2830,6 +2830,9 @@ class DeepSpeedEngine(Module):
         self._curr_save_path = None
 
     def _create_checkpoint_file(self, save_dir, tag, zero_checkpoint):
+        if self.enable_nebula:
+            return True
+
         name_function = (self._get_zero_ckpt_name
                          if zero_checkpoint else self._get_ckpt_name)
         try:
