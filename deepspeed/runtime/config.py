@@ -45,6 +45,8 @@ from ..autotuning.config import DeepSpeedAutotuningConfig
 
 from .swap_tensor.aio_config import get_aio_config
 
+from ..nebula.config import DeepSpeedNebulaConfig
+
 TENSOR_CORE_ALIGN_SIZE = 8
 
 ADAGRAD_OPTIMIZER = 'adagrad'

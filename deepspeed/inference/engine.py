@@ -9,7 +9,7 @@ from ..runtime.state_dict_factory import SDLoaderFactory
 from ..runtime.weight_quantizer import WeightQuantization
 from ..module_inject.replace_module import replace_transformer_layer
 from ..utils import logger, init_distributed
-
+from deepspeed.runtime.checkpoint_engine.torch_checkpoint_engine import TorchCheckpointEngine
 from ..pipe import PipelineModule
 from ..moe.utils import has_moe_layers
 from ..moe.layer import MoE
@@ -79,7 +79,7 @@ class InferenceEngine(Module):
         self.ep_size = ep_size
         self.ep_group = ep_group
         self.expert_mp_group = expert_mp_group
-
+        self.checkpoint_engine = TorchCheckpointEngine()
         self._init_quantization_setting(quantization_setting)
 
         if self.checkpoint:
@@ -281,9 +281,10 @@ class InferenceEngine(Module):
                         tag = fd.read().strip()
 
             ckpt_list = self._get_all_ckpt_names(load_dir, tag)
-            sd_loader = SDLoaderFactory.get_sd_loader(ckpt_list)
+            sd_loader = SDLoaderFactory.get_sd_loader(ckpt_list, self.checkpoint_engine)
         else:
-            sd_loader = SDLoaderFactory.get_sd_loader_json(load_dir)
+            sd_loader = SDLoaderFactory.get_sd_loader_json(load_dir,
+                                                           self.checkpoint_engine)
 
         mp_rank = 0 if self.mpu is None else self.mpu.get_model_parallel_rank()
 
@@ -308,10 +309,12 @@ class InferenceEngine(Module):
                 state_dict=checkpoint[self._choose_module_key(checkpoint)],
                 old_moe_load=old_moe_load,
                 model=self.module,
-                mpu=self.mpu)
+                mpu=self.mpu,
+                checkpoint_engine=self.checkpoint_engine)
 
         self.module.load_state_dict(
             state_dict=checkpoint[self._choose_module_key(checkpoint)],
+            checkpoint_engine=self.checkpoint_engine,
             strict=load_module_strict)
 
     def _choose_module_key(self, sd):
