@@ -804,6 +804,7 @@ class DeepSpeedEngine(Module):
                     f"No torch_nebula was found! Will fall back to torch.save. Details: {err}"
                 )
                 self.checkpoint_engine = TorchCheckpointEngine()
+
         dp_rank = self.global_rank
         if self.mpu:
             dp_rank = self.mpu.get_data_parallel_rank()
