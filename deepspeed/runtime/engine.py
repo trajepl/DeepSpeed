@@ -39,7 +39,7 @@ from deepspeed.runtime.config import DeepSpeedConfig, DEEPSPEED_OPTIMIZERS, \
 from deepspeed.runtime.dataloader import DeepSpeedDataLoader
 from deepspeed.runtime.constants import \
     ROUTE_TRAIN, ROUTE_PREDICT, ROUTE_EVAL, \
-    PLD_THETA, PLD_GAMMA
+    PLD_THETA, PLD_GAMMA, BFLOAT16, FP16
 from deepspeed.runtime.zero.constants import \
     ZERO_OPTIMIZATION_OPTIMIZER_STATES, ZERO_OPTIMIZATION_GRADIENTS, ZERO_OPTIMIZATION_WEIGHTS
 from deepspeed.checkpoint.constants import OPTIMIZER_STATE_DICT
@@ -2653,48 +2653,38 @@ class DeepSpeedEngine(Module):
 
         return zero_ckpt_names
 
-    def _get_all_zero_checkpoints(self, load_dir, tag):
-        mp_rank = 0 if self.mpu is None else self.mpu.get_model_parallel_rank()
-        zero_ckpt_names = self._get_mp_rank_zero_checkpoint_names(
-            load_dir=load_dir,
-            tag=tag,
-            mp_rank=mp_rank,
-            dp_world_size=self.loaded_checkpoint_dp_world_size,
-        )
-        invalid_zero_ckpt_paths = []
-        for i, ckpt_name in enumerate(zero_ckpt_names):
-            if not os.path.exists(ckpt_name):
-                # transparently handle the old file pattern for optim_states
-                if "optim_states.pt" in ckpt_name:
-                    ckpt_name_try = ckpt_name.replace("_optim_states.pt",
-                                                      "optim_states.pt")
-                    if os.path.exists(ckpt_name_try):
-                        zero_ckpt_names[i] = ckpt_name_try
-                        continue
-                invalid_zero_ckpt_paths.append(ckpt_name)
-
-        if len(invalid_zero_ckpt_paths) > 0:
-            logger.warn(
-                f"The following zero checkpoints paths are missing: {invalid_zero_ckpt_paths}"
-            )
-            return None
-
+    def _get_all_zero_checkpoint_state_dicts(self, zero_ckpt_names):
         zero_sd_list = []
         for i, ckpt_name in enumerate(zero_ckpt_names):
             _state = None
             # Fully load state for current rank
             if self.zero_elastic_checkpoint() or dist.get_rank(
                     group=self.optimizer.dp_process_group) == i:
-                _state = torch.load(ckpt_name, map_location='cpu')
+                _state = self.checkpoint_engine.load(
+                    ckpt_name,
+                    map_location='cpu',
+                )
             else:
                 _state = {OPTIMIZER_STATE_DICT: None}
             zero_sd_list.append(_state)
 
-        zero_optimizer_sd = [sd[OPTIMIZER_STATE_DICT] for sd in zero_sd_list]
-        logger.info(
-            f"successfully read {len(zero_optimizer_sd)} ZeRO state_dicts for rank {self.global_rank}"
-        )
-        return zero_optimizer_sd
+    def _get_all_zero_checkpoints(self, load_dir, tag):
+        for bf16_mode in [self.bfloat16_enabled(), not self.bfloat16_enabled()]:
+            zero_ckpt_names = self._get_all_zero_checkpoint_names(
+                load_dir,
+                tag,
+                bf16_mode)
+            if zero_ckpt_names is not None:
+                # Warn if loading checkpoint of different bit16 type
+                if bf16_mode is not self.bfloat16_enabled():
+                    checkpoint_bit16 = BFLOAT16 if bf16_mode else FP16
+                    engine_bit16 = BFLOAT16 if self.bfloat16_enabled() else FP16
+                    logger.warn(
+                        f'Loading {checkpoint_bit16} zero checkpoints into {engine_bit16} training engine'
+                    )
+                return self._get_all_zero_checkpoint_state_dicts(zero_ckpt_names)
+
+        return None
 
     def _checkpoint_tag_validation(self, tag):
         if self.checkpoint_tag_validation_enabled():
@@ -3027,6 +3017,7 @@ class DeepSpeedEngine(Module):
         self.checkpoint_engine.save(zero_sd, zero_checkpoint_name)
         if self.global_rank == 0:
             self._copy_recovery_script(save_path)
+        ckpt_type = 'zero' if self.zero_optimization() else 'bf16_zero'
         logger.info('zero checkpoint saved {}'.format(zero_checkpoint_name))
 
     def _zero3_consolidated_16bit_state_dict(self):
