@@ -2324,19 +2324,30 @@ class DeepSpeedEngine(Module):
             self.module.load_state_dict(state_dict, # TODO
                                         strict=strict)
 
-    def _get_rank_zero_ckpt_name(self, checkpoints_path, tag, mp_rank, dp_rank):
-        filename = "zero_pp_rank_{}".format(dp_rank)
+    def _get_rank_zero_ckpt_name(self,
+                                 checkpoints_path,
+                                 tag,
+                                 mp_rank,
+                                 dp_rank,
+                                 bf16_mode):
+        file_prefix = self._get_zero_ckpt_prefix(dp_rank, bf16_mode=bf16_mode)
         zero_ckpt_name = os.path.join(
             checkpoints_path,
             str(tag),
-            filename + "_mp_rank_{:02d}".format(mp_rank) + "_optim_states.pt",
+            f"{file_prefix}_mp_rank_{mp_rank:02d}_optim_states.pt",
         )
         return zero_ckpt_name
 
     def _get_zero_ckpt_name(self, checkpoints_path, tag):
         mp_rank = 0 if self.mpu is None else self.mpu.get_model_parallel_rank()
-        pp_rank = torch.distributed.get_rank(group=self.optimizer.dp_process_group)
-        return self._get_rank_zero_ckpt_name(checkpoints_path, tag, mp_rank, pp_rank)
+        pp_rank = dist.get_rank(group=self.optimizer.dp_process_group)
+        bf16_mode = self.bfloat16_enabled()
+        return self._get_rank_zero_ckpt_name(checkpoints_path,
+                                             tag,
+                                             mp_rank,
+                                             pp_rank,
+                                             bf16_mode)
+
 
     def _get_ckpt_name(self, checkpoints_path, tag, mp_placeholder=None):
         if mp_placeholder is not None:
@@ -2626,13 +2637,19 @@ class DeepSpeedEngine(Module):
         )
         return True
 
-    def _get_mp_rank_zero_checkpoint_names(self, load_dir, tag, mp_rank, dp_world_size):
+    def _get_mp_rank_zero_checkpoint_names(self,
+                                           load_dir,
+                                           tag,
+                                           mp_rank,
+                                           dp_world_size,
+                                           bf16_mode):
         zero_ckpt_names = []
         for dp_rank in range(dp_world_size):
             ckpt_name = self._get_rank_zero_ckpt_name(checkpoints_path=load_dir,
                                                       tag=tag,
                                                       mp_rank=mp_rank,
-                                                      dp_rank=dp_rank)
+                                                      dp_rank=dp_rank,
+                                                      bf16_mode=bf16_mode)
             zero_ckpt_names.append(ckpt_name)
 
         return zero_ckpt_names
