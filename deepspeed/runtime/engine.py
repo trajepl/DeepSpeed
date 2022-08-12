@@ -2791,7 +2791,7 @@ class DeepSpeedEngine(Module):
         if self.save_zero_checkpoint:
             self._create_zero_checkpoint_files(nebula_dir, tag)
             self._create_checkpoint_file(torch_dir, tag, False)
-            self._save_zero_checkpoint(save_dir, tag)
+            self._save_zero_checkpoint(nebula_dir, tag)
 
         if self.zero_optimization_partition_weights():
             self.optimizer.checkpoint_event_epilogue()
@@ -3059,23 +3059,19 @@ class DeepSpeedEngine(Module):
         os.chmod(dst, os.stat(dst).st_mode | stat.S_IEXEC)
 
     def _save_zero_checkpoint(self, save_path, tag):
-        nebula_save_dir = os.path.join(save_path,"nebula_ckpt")
-        nebula_save_path = self._get_ckpt_name(nebula_save_dir, tag)
-
-        torch_save_dir = os.path.join(save_path,"torch_ckpt")
-        torch_save_path = self._get_ckpt_name(torch_save_dir, tag)
-        nebula_zero_checkpoint_name = self._get_zero_ckpt_name(nebula_save_path, tag)
-        torch_zero_checkpoint_name = self._get_zero_ckpt_name(torch_save_path, tag)
+        zero_checkpoint_name = self._get_zero_ckpt_name(save_path, tag)
+        torch_checkpoint_name = self._get_zero_ckpt_name(os.path.join(os.path.dirname(save_path),"torch_ckpt"), tag)
+        logger.info('zero checkpoint ready to be saved {}'.format(torch_checkpoint_name))
         zero_sd = dict(optimizer_state_dict=self.optimizer.state_dict(),
                        ds_config=self.config,
                        ds_version=version)
-        self.checkpoint_engine.save(zero_sd, nebula_zero_checkpoint_name)
-        self.torch_checkpoint_engine.save(zero_sd, torch_zero_checkpoint_name)
+        self.checkpoint_engine.save(zero_sd, zero_checkpoint_name)
+        self.torch_checkpoint_engine.save(zero_sd, torch_checkpoint_name)
         if self.global_rank == 0:
             self._copy_recovery_script(save_path)
         ckpt_type = 'zero' if self.zero_optimization() else 'bf16_zero'
-        logger.info('zero checkpoint saved {}'.format(nebula_zero_checkpoint_name))
-        logger.info('zero checkpoint saved {}'.format(torch_zero_checkpoint_name))
+        logger.info('zero checkpoint saved {}'.format(zero_checkpoint_name))
+        logger.info('zero checkpoint saved {}'.format(torch_checkpoint_name))
 
     def _zero3_consolidated_16bit_state_dict(self):
         """
