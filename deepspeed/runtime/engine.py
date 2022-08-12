@@ -215,6 +215,7 @@ class DeepSpeedEngine(Module):
         self._global_grad_norm = None
         self._is_gradient_accumulation_boundary = None
         self.checkpoint_engine = None
+        self.torch_checkpoint_engine = None
         # for debug purposes - can then debug print: debug_get_module_name(module)
         debug_extract_module_and_param_names(model)
 
@@ -792,7 +793,7 @@ class DeepSpeedEngine(Module):
 
     def _configure_checkpointing(self, dist_init_required):
         self.checkpoint_engine = TorchCheckpointEngine()
-
+        self.torch_checkpoint_engine = TorchCheckpointEngine()
         if self._config is not None and self._config.nebula_config.enabled:
             try:
                 from deepspeed.runtime.checkpoint_engine.nebula_checkpoint_engine import \
@@ -2760,6 +2761,10 @@ class DeepSpeedEngine(Module):
 
         # Ensure save_dir directory exists
         os.makedirs(save_dir, exist_ok=True)
+        nebula_dir = os.path.join(save_dir, "nebula_ckpt")
+        torch_dir = os.path.join(save_dir, "torch_ckpt")
+        os.makedirs(nebula_dir, exist_ok=True)
+        os.makedirs(torch_dir, exist_ok=True)
         torch.distributed.barrier()
 
         if tag is None:
@@ -2768,20 +2773,24 @@ class DeepSpeedEngine(Module):
         # Ensure tag is a string
         tag = str(tag)
         self.checkpoint_engine.create(tag)
+        self.torch_checkpoint_engine.create(tag)
         # Ensure checkpoint tag is consistent across ranks
         self._checkpoint_tag_validation(tag)
 
         if self.has_moe_layers:
             self.save_non_zero_checkpoint = False
-            self._create_checkpoint_file(save_dir, tag, False)
+            self._create_checkpoint_file(nebula_dir, tag, False)
+            self._create_checkpoint_file(torch_dir, tag, False)
             self._save_moe_checkpoint(save_dir, tag, client_state=client_state)
 
         if self.save_non_zero_checkpoint:
-            self._create_checkpoint_file(save_dir, tag, False)
+            self._create_checkpoint_file(nebula_dir, tag, False)
+            self._create_checkpoint_file(torch_dir, tag, False)
             self._save_checkpoint(save_dir, tag, client_state=client_state)
 
         if self.save_zero_checkpoint:
-            self._create_zero_checkpoint_files(save_dir, tag)
+            self._create_zero_checkpoint_files(nebula_dir, tag)
+            self._create_checkpoint_file(torch_dir, tag, False)
             self._save_zero_checkpoint(save_dir, tag)
 
         if self.zero_optimization_partition_weights():
@@ -2789,9 +2798,12 @@ class DeepSpeedEngine(Module):
 
         # Save latest checkpoint tag
         self.checkpoint_engine.commit(tag)
+        self.torch_checkpoint_engine.commit(tag)
         torch.distributed.barrier()
         if save_latest and self.global_rank == 0:
-            with open(os.path.join(save_dir, 'latest'), 'w') as fd:
+            with open(os.path.join(nebula_dir, 'latest'), 'w') as fd:
+                fd.write(tag)
+            with open(os.path.join(torch_dir, 'latest'), 'w') as fd:
                 fd.write(tag)
 
         return True
@@ -2939,12 +2951,16 @@ class DeepSpeedEngine(Module):
         return success
 
     def _save_checkpoint(self, save_dir, tag, client_state={}):
+        nebula_save_dir = os.path.join(save_dir,"nebula_ckpt")
+        nebula_save_path = self._get_ckpt_name(nebula_save_dir, tag)
 
-        save_path = self._get_ckpt_name(save_dir, tag)
+        torch_save_dir = os.path.join(save_dir,"torch_ckpt")
+        torch_save_path = self._get_ckpt_name(torch_save_dir, tag)
+
         # A hack to save the checkpointing directory. Pipeline parallelism overrides
         # module_state_dict() and uses this path to save the model. module_state_dict()
         # then instead just returns None.
-        self._curr_ckpt_path = os.path.join(save_dir, tag)
+        self._curr_ckpt_path = os.path.join(nebula_save_dir, tag)
 
         state = dict(module=self.module_state_dict(),
                      buffer_names=self._get_buffer_names(),
@@ -2964,8 +2980,9 @@ class DeepSpeedEngine(Module):
                      ds_version=version)
         state.update(client_state)
 
-        log_dist(message=f'Saving model checkpoint: {save_path}', ranks=[0, 1])
-        self.checkpoint_engine.save(state, save_path)
+        log_dist(message=f'Saving model checkpoint: {nebula_save_path}', ranks=[0, 1])
+        self.checkpoint_engine.save(state, nebula_save_path)
+        self.torch_checkpoint_engine.save(state, torch_save_path)
         self._curr_save_path = None
 
     def _get_buffer_names(self):
@@ -3042,15 +3059,23 @@ class DeepSpeedEngine(Module):
         os.chmod(dst, os.stat(dst).st_mode | stat.S_IEXEC)
 
     def _save_zero_checkpoint(self, save_path, tag):
-        zero_checkpoint_name = self._get_zero_ckpt_name(save_path, tag)
+        nebula_save_dir = os.path.join(save_path,"nebula_ckpt")
+        nebula_save_path = self._get_ckpt_name(nebula_save_dir, tag)
+
+        torch_save_dir = os.path.join(save_path,"torch_ckpt")
+        torch_save_path = self._get_ckpt_name(torch_save_dir, tag)
+        nebula_zero_checkpoint_name = self._get_zero_ckpt_name(nebula_save_path, tag)
+        torch_zero_checkpoint_name = self._get_zero_ckpt_name(torch_save_path, tag)
         zero_sd = dict(optimizer_state_dict=self.optimizer.state_dict(),
                        ds_config=self.config,
                        ds_version=version)
-        self.checkpoint_engine.save(zero_sd, zero_checkpoint_name)
+        self.checkpoint_engine.save(zero_sd, nebula_zero_checkpoint_name)
+        self.torch_checkpoint_engine.save(zero_sd, torch_zero_checkpoint_name)
         if self.global_rank == 0:
             self._copy_recovery_script(save_path)
         ckpt_type = 'zero' if self.zero_optimization() else 'bf16_zero'
-        logger.info('zero checkpoint saved {}'.format(zero_checkpoint_name))
+        logger.info('zero checkpoint saved {}'.format(nebula_zero_checkpoint_name))
+        logger.info('zero checkpoint saved {}'.format(torch_zero_checkpoint_name))
 
     def _zero3_consolidated_16bit_state_dict(self):
         """
