@@ -3069,6 +3069,7 @@ class DeepSpeedEngine(Module):
         self.torch_checkpoint_engine.save(zero_sd, torch_checkpoint_name)
         if self.global_rank == 0:
             self._copy_recovery_script(save_path)
+            self._copy_recovery_script(os.path.join(os.path.dirname(save_path),"torch_ckpt"))
         ckpt_type = 'zero' if self.zero_optimization() else 'bf16_zero'
         logger.info('zero checkpoint saved {}'.format(zero_checkpoint_name))
         logger.info('zero checkpoint saved {}'.format(torch_checkpoint_name))
