@@ -84,5 +84,6 @@ class NebulaCheckpointEngine(CheckpointEngine):
         if not commit_rls:
             logger.error(
                 f"[Nebula] failed to commit the checkpoint, please check the log.")
+            raise Exception("[Nebula] failed to commit the checkpoint, please check the log.")
             return False
         return commit_rls

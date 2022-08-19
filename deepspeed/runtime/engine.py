@@ -2919,7 +2919,10 @@ class DeepSpeedEngine(Module):
 
         # Save latest checkpoint tag
         dist.barrier()
-        self.checkpoint_engine.commit(tag)
+        try:
+            self.checkpoint_engine.commit(tag)
+        except Exception:
+            return False
         if save_latest and self.global_rank == 0:
             with open(os.path.join(save_dir, 'latest'), 'w') as fd:
                 fd.write(tag)
