@@ -533,7 +533,7 @@ class PipelineModule(nn.Module):
         layer_ckpt_path += '-model_states.pt'
         return layer_ckpt_path
 
-    def save_state_dict(self, save_dir):
+    def save_state_dict(self, save_dir, checkpoint_engine):
         if self._grid.data_parallel_id != 0:
             return
 
@@ -543,9 +543,9 @@ class PipelineModule(nn.Module):
             model_ckpt_path = self.ckpt_layer_path(save_dir, idx)
             if not hasattr(layer, 'state_dict'):
                 continue
-            torch.save(layer.state_dict(), model_ckpt_path)
+            checkpoint_engine.save(layer.state_dict(), model_ckpt_path)
 
-    def load_state_dir(self, load_dir, strict=True):
+    def load_state_dir(self, load_dir, checkpoint_engine, strict=True):
         rank = dist.get_rank()
 
         layer_offset = self._local_start
@@ -555,9 +555,9 @@ class PipelineModule(nn.Module):
                 continue
 
             model_ckpt_path = self.ckpt_layer_path(load_dir, idx)
-            layer.load_state_dict(torch.load(model_ckpt_path,
-                                             map_location=lambda storage,
-                                             loc: storage),
+            layer.load_state_dict(checkpoint_engine.load(model_ckpt_path,
+                                                         map_location=lambda storage,
+                                                         loc: storage),
                                   strict=strict)
             if self._grid.data_parallel_id == 0:
                 logger.info(

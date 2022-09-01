@@ -8,6 +8,7 @@ from deepspeed.runtime.zero.stage1 import FP16_DeepSpeedZeroOptimizer_Stage1
 
 from deepspeed.runtime.fp16.fused_optimizer import FP16_Optimizer
 from deepspeed.runtime.fp16.unfused_optimizer import FP16_UnfusedOptimizer
+from deepspeed.runtime.checkpoint_engine.torch_checkpoint_engine import TorchCheckpointEngine
 
 from deepspeed.runtime.pipe.topology import *
 PipeTopo = PipeDataParallelTopology
@@ -699,13 +700,14 @@ def test_checkpoint_pipe_engine(zero_stage, tmpdir, stages=2):
 def test_checkpoint_pipe_module(base_topo, test_topo, tmpdir):
     @distributed_test(world_size=4)
     def _test(base_topo, test_topo, save_folder):
+        checkpoint_engine = TorchCheckpointEngine()
         base_model = LinearStackPipe(topology=base_topo)
-        base_model.save_state_dict(save_folder)
+        base_model.save_state_dict(save_folder, checkpoint_engine=checkpoint_engine)
 
         dist.barrier()
 
         test_model = LinearStackPipe(topology=test_topo)
-        test_model.load_state_dir(save_folder)
+        test_model.load_state_dir(save_folder, checkpoint_engine=checkpoint_engine)
 
         # Base and test can have different lengths, so make sure we map from the
         # smaller to larger model

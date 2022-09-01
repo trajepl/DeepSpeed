@@ -38,6 +38,7 @@ import deepspeed.runtime.lr_schedules as lr_schedules
 from deepspeed.utils import logger, log_dist, init_distributed
 from deepspeed.utils.timer import ThroughputTimer, SynchronizedWallClockTimer
 from deepspeed.runtime.progressive_layer_drop import ProgressiveLayerDrop
+from deepspeed.runtime.checkpoint_engine.torch_checkpoint_engine import TorchCheckpointEngine
 
 from .pipe.module import PipelineModule
 from .utils import ensure_directory_exists
@@ -133,6 +134,7 @@ class DeepSpeedEngine(Module):
         self.enable_backward_allreduce = True
         self.progressive_layer_drop = None
         self.dist_backend = "nccl"
+        self.checkpoint_engine = None
 
         if dist_init_required is None:
             dist_init_required = not dist.is_initialized()
@@ -451,6 +453,19 @@ class DeepSpeedEngine(Module):
         log_dist(f'DeepSpeed LR Scheduler = {self.lr_scheduler}', ranks=[0])
 
     def _configure_checkpointing(self, dist_init_required):
+        self.checkpoint_engine = TorchCheckpointEngine()
+
+        if self._config is not None and self._config.nebula_config.enabled:
+            try:
+                from deepspeed.runtime.checkpoint_engine.nebula_checkpoint_engine import \
+                    NebulaCheckpointEngine
+                self.checkpoint_engine = NebulaCheckpointEngine(
+                    config_params=self._config.nebula_config)
+            except ImportError as err:
+                logger.error(
+                    f"No torch_nebula was found! Will fall back to torch.save. Details: {err}"
+                )
+                self.checkpoint_engine = TorchCheckpointEngine()
 
         dp_rank = self.global_rank
         if self.mpu:
@@ -1610,6 +1625,7 @@ class DeepSpeedEngine(Module):
 
         # Ensure tag is a string
         tag = str(tag)
+        self.checkpoint_engine.create(tag)
 
         # Ensure checkpoint tag is consistent across ranks
         self._checkpoint_tag_validation(tag)
@@ -1623,6 +1639,7 @@ class DeepSpeedEngine(Module):
             self._save_zero_checkpoint(save_dir, tag)
 
         # Save latest checkpoint tag
+        self.checkpoint_engine.commit(tag)
         if save_latest:
             with open(os.path.join(save_dir, 'latest'), 'w') as fd:
                 fd.write(tag)
@@ -1679,7 +1696,7 @@ class DeepSpeedEngine(Module):
 
         log_dist(message=f'Saving model checkpoint: {save_path}', ranks=[0])
         #logger.info('Saving model checkpoint: {}'.format(save_path))
-        torch.save(state, save_path)
+        self.checkpoint_engine.save(state, save_path)
         self._curr_save_path = None
 
     def _get_param_shapes(self):
@@ -1706,7 +1723,7 @@ class DeepSpeedEngine(Module):
             optimizer_state_dict=self.optimizer.state_dict(),
             param_shapes=self._get_param_shapes(),
         )
-        torch.save(zero_sd, zero_checkpoint_name)
+        self.checkpoint_engine.save(zero_sd, zero_checkpoint_name)
         self._copy_recovery_script(save_path)
         logger.info('zero checkpoint saved {}'.format(zero_checkpoint_name))
 
@@ -1805,4 +1822,4 @@ class DeepSpeedEngine(Module):
         if torch.distributed.get_rank() == 0:
             os.makedirs(save_dir, exist_ok=True)
             logger.info(f"Saving model weights to {path}")
-            torch.save(state_dict, path)
+            self.checkpoint_engine.save(state_dict, path)

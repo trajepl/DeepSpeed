@@ -24,6 +24,8 @@ from ..elasticity.constants import ELASTICITY, IGNORE_NON_ELASTIC_BATCH_INFO, \
 
 from ..profiling.config import DeepSpeedFlopsProfilerConfig
 
+from ..nebula.config import DeepSpeedNebulaConfig
+
 TENSOR_CORE_ALIGN_SIZE = 8
 
 ADAM_OPTIMIZER = 'adam'
@@ -655,6 +657,8 @@ class DeepSpeedConfig(object):
         validation_mode = get_checkpoint_tag_validation_mode(checkpoint_params)
         self.checkpoint_tag_validation_enabled = validation_mode != ValidationMode.IGNORE
         self.checkpoint_tag_validation_fail = validation_mode == ValidationMode.FAIL
+
+        self.nebula_config = DeepSpeedNebulaConfig(param_dict)
 
     def _batch_assertion(self):
 

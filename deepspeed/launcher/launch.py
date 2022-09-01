@@ -19,6 +19,7 @@ from collections import defaultdict
 from argparse import ArgumentParser, REMAINDER
 
 from ..constants import TORCH_DISTRIBUTED_DEFAULT_PORT
+from ..nebula.constants import DLTS_POD_ENV_PATH
 from ..utils import logger
 
 
@@ -109,6 +110,17 @@ def main():
     current_env["MASTER_ADDR"] = args.master_addr
     current_env["MASTER_PORT"] = str(args.master_port)
     current_env["WORLD_SIZE"] = str(dist_world_size)
+
+    if os.path.exists(DLTS_POD_ENV_PATH):
+    with open(DLTS_POD_ENV_PATH) as file:
+        lines = file.readlines()
+        lines = [line.rstrip() for line in lines]
+        for line in lines:
+            if line.startswith('export FC_TASKROLE_NAME') or line.startswith(
+                    'export FC_TASK_INDEX'):
+                key_val = line.split()[1]
+                key, val = key_val.split('=')
+                current_env[key] = val
 
     processes = []
     for local_rank in range(0, num_local_procs):
