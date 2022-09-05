@@ -112,15 +112,15 @@ def main():
     current_env["WORLD_SIZE"] = str(dist_world_size)
 
     if os.path.exists(DLTS_POD_ENV_PATH):
-    with open(DLTS_POD_ENV_PATH) as file:
-        lines = file.readlines()
-        lines = [line.rstrip() for line in lines]
-        for line in lines:
-            if line.startswith('export FC_TASKROLE_NAME') or line.startswith(
-                    'export FC_TASK_INDEX'):
-                key_val = line.split()[1]
-                key, val = key_val.split('=')
-                current_env[key] = val
+        with open(DLTS_POD_ENV_PATH) as file:
+            lines = file.readlines()
+            lines = [line.rstrip() for line in lines]
+            for line in lines:
+                if line.startswith('export FC_TASKROLE_NAME') or line.startswith(
+                        'export FC_TASK_INDEX'):
+                    key_val = line.split()[1]
+                    key, val = key_val.split('=')
+                    current_env[key] = val
 
     processes = []
     for local_rank in range(0, num_local_procs):

@@ -1458,7 +1458,7 @@ class DeepSpeedEngine(Module):
             return None, None
 
         logger.info(f'rank: {self.global_rank} loading checkpoint: {load_path}')
-        checkpoint = torch.load(load_path, map_location=lambda storage, loc: storage)
+        checkpoint = self.checkpoint_engine.load(load_path, map_location=lambda storage, loc: storage)
 
         if isinstance(self.module, PipelineModule):
             # Pipeline parallelism uses this to load its own checkpoint files.
@@ -1569,7 +1569,7 @@ class DeepSpeedEngine(Module):
 
         zero_sd_list = []
         for ckpt_name in zero_ckpt_names:
-            zero_sd_list.append(torch.load(ckpt_name, map_location='cpu'))
+            zero_sd_list.append(self.checkpoint_engine.load(ckpt_name, map_location='cpu'))
 
         zero_optimizer_sd = [sd['optimizer_state_dict'] for sd in zero_sd_list]
         print(
